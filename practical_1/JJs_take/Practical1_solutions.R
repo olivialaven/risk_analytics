@@ -144,7 +144,7 @@ p_exceed <- mean(df$precip > th, na.rm=TRUE)
 # For daily data, number of days per year ~ 365. Return level for T-year with prob p = 1/(T*365)
 # compute T-year return level (approx) using the GPD tail extrapolation
 return_level_pot <- function(T_years){
-  p_annual <- 1/(T_YEARs*365)
+  p_annual <- 1/(T_years*365)
   # required exceedance quantile of precipitation: quantile threshold + GPD quantile
   # Using formula z_p = th + (beta/xi) * (( (p_exceed / p_annual)^{xi} ) - 1)  for xi != 0
   if(abs(nu_hat) < 1e-6){
