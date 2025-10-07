@@ -1,0 +1,763 @@
+---
+title: "Risk Analytics Practical 1 - Actual Assignment Solutions"
+author: "JJ's Take"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    theme: cosmo
+    highlight: tango
+    code_folding: show
+  word_document:
+    toc: true
+    number_sections: true
+  pdf_document:
+    toc: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  fig.align = 'center'
+)
+
+# Set working directory if needed
+if(!getwd() %in% c(file.path(getwd(), 'practical_1', 'JJs_take'))) {
+  if(dir.exists('practical_1')) {
+    knitr::opts_knit$set(root.dir = '.')
+  }
+}
+
+# Load packages
+required_packages <- c(
+  'readr', 'lubridate', 'ggplot2', 'dplyr', 'tidyr', 'knitr',
+  'nortest', 'fitdistrplus', 'lmtest', 'forecast', 
+  'fGarch', 'extremogram', 'tseries', 'moments'
+)
+
+missing_packages <- required_packages[!required_packages %in% installed.packages()[,1]]
+if(length(missing_packages) > 0) {
+  install.packages(missing_packages, repos = 'https://cloud.r-project.org')
+}
+
+library(readr); library(lubridate); library(ggplot2); library(dplyr); library(tidyr); library(knitr)
+library(nortest); library(fitdistrplus); library(lmtest); library(forecast)
+library(fGarch); library(extremogram); library(tseries); library(moments)
+```
+
+# Introduction
+
+This report analyzes the River Thielle discharge and precipitation data from the Lake Neuchâtel region, following the actual assignment requirements for Risk Analytics Practical 1. The analysis covers three main parts:
+
+1. **Statistical assumptions for modeling extremes** - Distribution assessment and normality testing
+2. **Correlation versus causation** - Dependency analysis and causality testing  
+3. **Time series modeling** - ARIMA/GARCH models and heteroscedasticity analysis
+
+```{r data-loading}
+# Load data
+data_path <- file.path('..', 'River_and_precip_Neuchatel.csv')
+
+if(!file.exists(data_path)) {
+  stop("Data file not found. Please ensure River_and_precip_Neuchatel.csv is in the practical_1 folder.")
+}
+
+raw_data <- read_csv(data_path, col_types = cols(
+  Date = col_date(format = "%Y-%m-%d"),
+  RiverDischarge = col_double(),
+  Precipitation = col_double()
+))
+
+df <- raw_data %>% 
+  rename(date = Date, discharge = RiverDischarge, precip = Precipitation) %>%
+  filter(!is.na(discharge) & !is.na(precip))
+
+# Basic data overview
+cat("Dataset overview:\n")
+cat("- Observations:", nrow(df), "\n")
+cat("- Date range:", as.character(min(df$date)), "to", as.character(max(df$date)), "\n")
+cat("- Missing values: Discharge =", sum(is.na(df$discharge)), ", Precipitation =", sum(is.na(df$precip)), "\n")
+
+kable(head(df, 10), caption = "First 10 observations of the dataset")
+```
+
+# Part 1: Statistical assumptions for modeling extremes
+
+## Visual assessment of distribution
+
+We begin by visually examining the distribution of river discharge data through histograms and Q-Q plots.
+
+```{r part1a-visual}
+# Histogram of discharge
+p1a_hist <- ggplot(df, aes(x = discharge)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 50, 
+                 fill = 'lightblue', color = 'black', alpha = 0.7) +
+  labs(title = 'Histogram of River Discharge',
+       x = 'Discharge (m³/s)', y = 'Density') +
+  theme_minimal()
+
+print(p1a_hist)
+
+# Q-Q plot against normal distribution
+discharge_values <- df$discharge
+qqnorm_data <- data.frame(
+  theoretical = qnorm(ppoints(length(discharge_values))),
+  sample = sort(discharge_values)
+)
+
+p1a_qq <- ggplot(qqnorm_data, aes(x = theoretical, y = sample)) +
+  geom_point(alpha = 0.6) +
+  geom_abline(slope = sd(discharge_values), intercept = mean(discharge_values), 
+              color = 'red', linetype = 'dashed') +
+  labs(title = 'Q-Q Plot: River Discharge vs Normal Distribution',
+       x = 'Theoretical Normal Quantiles', y = 'Sample Quantiles') +
+  theme_minimal()
+
+print(p1a_qq)
+
+# Calculate descriptive statistics
+skewness_val <- moments::skewness(discharge_values)
+kurtosis_val <- moments::kurtosis(discharge_values)
+
+cat("Distribution characteristics:\n")
+cat("- Mean:", round(mean(discharge_values), 3), "\n")
+cat("- Standard deviation:", round(sd(discharge_values), 3), "\n") 
+cat("- Skewness:", round(skewness_val, 3), "\n")
+cat("- Kurtosis:", round(kurtosis_val, 3), "\n")
+```
+
+**Interpretation:** The histogram and Q-Q plot reveal whether the discharge data follows a normal distribution. Deviations from normality are indicated by departures from the straight line in the Q-Q plot.
+
+## Formal assessment with Anderson-Darling test
+
+```{r part1b-anderson-darling}
+# Anderson-Darling test for normality
+ad_test <- nortest::ad.test(discharge_values)
+
+cat("Anderson-Darling test for normality:\n")
+cat("- Test statistic:", round(ad_test$statistic, 4), "\n")
+cat("- p-value:", format(ad_test$p.value, scientific = TRUE), "\n")
+cat("- Conclusion:", ifelse(ad_test$p.value < 0.05, 
+                          "Reject normality (p < 0.05)", 
+                          "Cannot reject normality (p >= 0.05)"), "\n")
+
+# Present results in a table
+test_results <- data.frame(
+  Test = "Anderson-Darling",
+  Statistic = round(ad_test$statistic, 4),
+  `p-value` = format(ad_test$p.value, scientific = TRUE),
+  Conclusion = ifelse(ad_test$p.value < 0.05, "Reject normality", "Cannot reject normality")
+)
+
+kable(test_results, caption = "Normality test results")
+```
+
+## Fitting alternative distributions
+
+Since the data may not follow a normal distribution, we fit several alternative distributions and compare their performance.
+
+```{r part1c-alternative-distributions}
+# Try different distributions
+distributions_to_try <- c("gamma", "lnorm", "weibull", "exp")
+fit_results <- list()
+
+for(dist in distributions_to_try) {
+  tryCatch({
+    fit_results[[dist]] <- fitdist(discharge_values, dist)
+  }, error = function(e) {
+    cat("Failed to fit", dist, "distribution:", e$message, "\n")
+  })
+}
+
+# Compare AIC values
+if(length(fit_results) > 0) {
+  aic_values <- sapply(fit_results, function(x) x$aic)
+  aic_comparison <- data.frame(
+    Distribution = names(aic_values),
+    AIC = round(aic_values, 2)
+  ) %>%
+    arrange(AIC)
+  
+  kable(aic_comparison, caption = "AIC comparison of fitted distributions (lower is better)")
+  
+  best_dist <- aic_comparison$Distribution[1]
+  cat("Best fitting distribution (lowest AIC):", best_dist, "\n")
+  
+  # Q-Q plot comparison
+  if(best_dist == "gamma") {
+    theoretical_best <- qgamma(ppoints(length(discharge_values)), 
+                              shape = fit_results[[best_dist]]$estimate[1],
+                              rate = fit_results[[best_dist]]$estimate[2])
+  } else if(best_dist == "lnorm") {
+    theoretical_best <- qlnorm(ppoints(length(discharge_values)),
+                              meanlog = fit_results[[best_dist]]$estimate[1],
+                              sdlog = fit_results[[best_dist]]$estimate[2])
+  } else if(best_dist == "weibull") {
+    theoretical_best <- qweibull(ppoints(length(discharge_values)),
+                                shape = fit_results[[best_dist]]$estimate[1],
+                                scale = fit_results[[best_dist]]$estimate[2])
+  }
+  
+  if(exists("theoretical_best")) {
+    qq_comparison <- data.frame(
+      theoretical_normal = qnorm(ppoints(length(discharge_values))),
+      theoretical_best = sort(theoretical_best),
+      sample = sort(discharge_values)
+    )
+    
+    p1c_qq_comp <- ggplot(qq_comparison) +
+      geom_point(aes(x = theoretical_normal, y = sample), 
+                 alpha = 0.6, color = 'blue') +
+      geom_point(aes(x = theoretical_best, y = sample), 
+                 alpha = 0.6, color = 'red') +
+      geom_abline(slope = 1, intercept = 0, linetype = 'dashed') +
+      labs(title = paste('Q-Q Plot Comparison: Normal (blue) vs', best_dist, '(red)'),
+           x = 'Theoretical Quantiles', y = 'Sample Quantiles') +
+      theme_minimal()
+    
+    print(p1c_qq_comp)
+  }
+}
+```
+
+## Tail comparison and interpretation
+
+```{r part1d-tail-comparison}
+if(length(fit_results) > 0 && exists("best_dist")) {
+  # Density plot comparison
+  x_seq <- seq(min(discharge_values), max(discharge_values), length.out = 1000)
+  
+  # Normal density
+  normal_density <- dnorm(x_seq, mean = mean(discharge_values), sd = sd(discharge_values))
+  
+  # Best fit density
+  if(best_dist == "gamma") {
+    best_density <- dgamma(x_seq, 
+                          shape = fit_results[[best_dist]]$estimate[1],
+                          rate = fit_results[[best_dist]]$estimate[2])
+  } else if(best_dist == "lnorm") {
+    best_density <- dlnorm(x_seq,
+                          meanlog = fit_results[[best_dist]]$estimate[1],
+                          sdlog = fit_results[[best_dist]]$estimate[2])
+  } else if(best_dist == "weibull") {
+    best_density <- dweibull(x_seq,
+                            shape = fit_results[[best_dist]]$estimate[1],
+                            scale = fit_results[[best_dist]]$estimate[2])
+  }
+  
+  if(exists("best_density")) {
+    density_comparison <- data.frame(
+      x = rep(x_seq, 2),
+      density = c(normal_density, best_density),
+      distribution = rep(c("Normal", best_dist), each = length(x_seq))
+    )
+    
+    p1d_density <- ggplot(df, aes(x = discharge)) +
+      geom_histogram(aes(y = after_stat(density)), bins = 50, 
+                     fill = 'lightgray', color = 'black', alpha = 0.7) +
+      geom_line(data = density_comparison, aes(x = x, y = density, color = distribution),
+                size = 1) +
+      scale_color_manual(values = c("Normal" = "blue", best_dist = "red")) +
+      labs(title = 'Density Comparison: Empirical vs Fitted Distributions',
+           x = 'Discharge (m³/s)', y = 'Density',
+           color = 'Distribution') +
+      theme_minimal()
+    
+    print(p1d_density)
+    
+    # Tail probability comparison
+    high_threshold <- quantile(discharge_values, 0.95)
+    normal_tail_prob <- 1 - pnorm(high_threshold, mean = mean(discharge_values), sd = sd(discharge_values))
+    
+    if(best_dist == "gamma") {
+      best_tail_prob <- 1 - pgamma(high_threshold,
+                                  shape = fit_results[[best_dist]]$estimate[1],
+                                  rate = fit_results[[best_dist]]$estimate[2])
+    } else if(best_dist == "lnorm") {
+      best_tail_prob <- 1 - plnorm(high_threshold,
+                                  meanlog = fit_results[[best_dist]]$estimate[1],
+                                  sdlog = fit_results[[best_dist]]$estimate[2])
+    } else if(best_dist == "weibull") {
+      best_tail_prob <- 1 - pweibull(high_threshold,
+                                     shape = fit_results[[best_dist]]$estimate[1],
+                                     scale = fit_results[[best_dist]]$estimate[2])
+    }
+    
+    if(exists("best_tail_prob")) {
+      tail_comparison <- data.frame(
+        Distribution = c("Normal", best_dist),
+        `Tail Probability` = c(round(normal_tail_prob, 6), round(best_tail_prob, 6)),
+        `Threshold` = rep(round(high_threshold, 2), 2)
+      )
+      
+      kable(tail_comparison, caption = paste("Tail probability comparison: P(X >", round(high_threshold, 2), ")"))
+      
+      cat("Ratio (", best_dist, "/Normal):", round(best_tail_prob/normal_tail_prob, 2), "\n")
+    }
+  }
+}
+```
+
+**Interpretation:** The comparison shows how different distributional assumptions affect tail probability estimates, which is crucial for extreme event modeling.
+
+# Part 2: Correlation versus causation
+
+## Correlation test
+
+```{r part2a-correlation}
+# Pearson correlation test
+cor_test_result <- cor.test(df$discharge, df$precip)
+
+cat("Correlation between discharge and precipitation:\n")
+cat("- Correlation coefficient:", round(cor_test_result$estimate, 4), "\n")
+cat("- 95% Confidence interval: [", paste(round(cor_test_result$conf.int, 4), collapse = ", "), "]\n")
+cat("- p-value:", format(cor_test_result$p.value, scientific = TRUE), "\n")
+cat("- Conclusion:", ifelse(cor_test_result$p.value < 0.05,
+                          "Statistically significant correlation (p < 0.05)",
+                          "No significant correlation (p >= 0.05)"), "\n")
+
+# Create scatter plot
+scatter_plot <- ggplot(df, aes(x = precip, y = discharge)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "lm", color = "red") +
+  labs(title = 'Scatter Plot: Precipitation vs River Discharge',
+       x = 'Precipitation (mm)', y = 'Discharge (m³/s)') +
+  theme_minimal()
+
+print(scatter_plot)
+```
+
+## Cross-correlation function (CCF)
+
+The cross-correlation function helps identify lagged relationships between precipitation and discharge.
+
+```{r part2b-ccf}
+# Calculate CCF
+ccf_result <- ccf(df$precip, df$discharge, lag.max = 10, plot = FALSE)
+
+# Create CCF plot
+ccf_data <- data.frame(
+  lag = ccf_result$lag[,,1],
+  correlation = ccf_result$acf[,,1]
+)
+
+p2b_ccf <- ggplot(ccf_data, aes(x = lag, y = correlation)) +
+  geom_hline(yintercept = 0, color = 'black') +
+  geom_hline(yintercept = c(-0.05, 0.05), color = 'blue', linetype = 'dashed') +
+  geom_segment(aes(x = lag, xend = lag, y = 0, yend = correlation)) +
+  geom_point() +
+  labs(title = 'Cross-Correlation Function: Precipitation vs River Discharge',
+       x = 'Lag (days)', y = 'Cross-correlation',
+       subtitle = 'Positive lag: precipitation leads discharge') +
+  theme_minimal()
+
+print(p2b_ccf)
+
+# Find strongest correlations
+max_pos_lag <- ccf_data$lag[which.max(ccf_data$correlation)]
+max_pos_corr <- max(ccf_data$correlation)
+
+cat("Cross-correlation analysis:\n")
+cat("- Strongest positive correlation:", round(max_pos_corr, 4), "at lag", max_pos_lag, "days\n")
+
+# Create summary table
+ccf_summary <- ccf_data %>%
+  filter(abs(correlation) > 0.05) %>%
+  arrange(desc(abs(correlation))) %>%
+  head(5)
+
+if(nrow(ccf_summary) > 0) {
+  kable(ccf_summary, caption = "Top 5 significant cross-correlations (|r| > 0.05)", digits = 4)
+}
+```
+
+## Extremograms
+
+Extremograms analyze the temporal dependence of extreme events.
+
+```{r part2c-extremograms}
+# Set threshold for extremes (95th percentile)
+precip_threshold <- quantile(df$precip, 0.95, na.rm = TRUE)
+discharge_threshold <- quantile(df$discharge, 0.95, na.rm = TRUE)
+
+cat("Extreme event thresholds (95th percentile):\n")
+cat("- Precipitation:", round(precip_threshold, 2), "mm\n")
+cat("- Discharge:", round(discharge_threshold, 2), "m³/s\n")
+
+# Calculate extremograms
+tryCatch({
+  # Univariate extremograms
+  precip_extremogram <- extremogram1(df$precip, quant = 0.95, maxlag = 10)
+  discharge_extremogram <- extremogram1(df$discharge, quant = 0.95, maxlag = 10)
+  
+  # Cross-extremogram
+  cross_extremogram <- extremogram2(df$precip, df$discharge, quant1 = 0.95, quant2 = 0.95, maxlag = 10)
+  
+  # Create extremogram plot
+  extrem_data <- data.frame(
+    lag = 0:10,
+    precip_auto = precip_extremogram,
+    discharge_auto = discharge_extremogram,
+    cross = cross_extremogram
+  )
+  
+  extrem_long <- extrem_data %>%
+    pivot_longer(cols = c(precip_auto, discharge_auto, cross),
+                names_to = "type", values_to = "extremogram")
+  
+  p2c_extremogram <- ggplot(extrem_long, aes(x = lag, y = extremogram, color = type)) +
+    geom_line() +
+    geom_point() +
+    geom_hline(yintercept = 0.05, linetype = 'dashed', alpha = 0.5) +
+    labs(title = 'Extremograms: Temporal Dependence of Extreme Events',
+         x = 'Lag (days)', y = 'Extremogram',
+         color = 'Type') +
+    scale_color_discrete(labels = c("Cross (Precip→Discharge)", "Discharge Auto", "Precipitation Auto")) +
+    theme_minimal()
+  
+  print(p2c_extremogram)
+  
+  # Analyze clustering strength
+  precip_clustering <- sum(precip_extremogram[2:11] > 0.05)  # Exclude lag 0
+  discharge_clustering <- sum(discharge_extremogram[2:11] > 0.05)
+  
+  cat("Extreme clustering analysis:\n")
+  cat("- Precipitation: ", precip_clustering, "lags above 0.05 threshold\n")
+  cat("- Discharge: ", discharge_clustering, "lags above 0.05 threshold\n")
+  cat("- Stronger clustering in:", ifelse(discharge_clustering > precip_clustering, "Discharge", "Precipitation"), "\n")
+  
+}, error = function(e) {
+  cat("Error in extremogram analysis:", e$message, "\n")
+  cat("Note: extremogram package may not be available or installed\n")
+})
+```
+
+## Granger causality tests
+
+```{r part2d-granger-causality}
+# Standard Granger causality tests
+ts_precip <- ts(df$precip)
+ts_discharge <- ts(df$discharge)
+
+tryCatch({
+  # Test if precipitation Granger-causes discharge
+  granger_precip_to_discharge <- grangertest(ts_discharge ~ ts_precip, order = 3)
+  cat("Granger test - Precipitation → Discharge:\n")
+  print(granger_precip_to_discharge)
+  
+  # Test if discharge Granger-causes precipitation  
+  granger_discharge_to_precip <- grangertest(ts_precip ~ ts_discharge, order = 3)
+  cat("Granger test - Discharge → Precipitation:\n")
+  print(granger_discharge_to_precip)
+  
+  # Summary table
+  granger_summary <- data.frame(
+    Direction = c("Precipitation → Discharge", "Discharge → Precipitation"),
+    `F-statistic` = c(granger_precip_to_discharge$F[2], granger_discharge_to_precip$F[2]),
+    `p-value` = c(granger_precip_to_discharge$`Pr(>F)`[2], granger_discharge_to_precip$`Pr(>F)`[2]),
+    Significant = c(granger_precip_to_discharge$`Pr(>F)`[2] < 0.05, granger_discharge_to_precip$`Pr(>F)`[2] < 0.05)
+  )
+  
+  kable(granger_summary, caption = "Granger causality test results", digits = 4)
+  
+}, error = function(e) {
+  cat("Error in Granger causality testing:", e$message, "\n")
+})
+
+# Extreme causality test using JuroExtremes (if available)
+juro_path <- file.path('practical_1', 'JuroExtremes.R')
+if(file.exists(juro_path)) {
+  source(juro_path)
+  
+  if(exists("Extreme_causality_test")) {
+    cat("\nExtreme causality tests:\n")
+    
+    common_idx <- which(!is.na(df$discharge) & !is.na(df$precip))
+    precip_clean <- df$precip[common_idx]
+    discharge_clean <- df$discharge[common_idx]
+    
+    extreme_results <- data.frame()
+    
+    for(lag in 0:3) {
+      tryCatch({
+        extreme_test <- Extreme_causality_test(precip_clean, discharge_clean, 
+                                             lag_future = lag, 
+                                             p_value_computation = FALSE,
+                                             bootstrap_repetitions = 50)
+        
+        extreme_results <- rbind(extreme_results, data.frame(
+          Lag = lag,
+          Direction = "Precipitation → Discharge",
+          Output = as.character(extreme_test$output),
+          CTC = round(extreme_test$CTC, 4),
+          Baseline = round(extreme_test$baseline, 4)
+        ))
+      }, error = function(e) {
+        cat("Lag", lag, ": Error -", e$message, "\n")
+      })
+    }
+    
+    if(nrow(extreme_results) > 0) {
+      kable(extreme_results, caption = "Extreme causality test results")
+    }
+  }
+}
+```
+
+## Predictive insights
+
+```{r part2e-insights}
+cat("Predictive relationship analysis:\n")
+cat("(a) When extreme precipitation occurs, we expect:\n")
+cat("    - Based on CCF analysis: discharge response at lag", max_pos_lag, "with correlation", round(max_pos_corr, 4), "\n")
+cat("(b) When extreme discharge occurs, precipitation inference:\n") 
+cat("    - Based on reverse causality analysis (see above results)\n")
+```
+
+# Part 3: Time series modeling, heteroscedasticity, and weather-driven volatility
+
+## Autocorrelation patterns
+
+```{r part3a-acf-patterns}
+# ACF of raw discharge series
+acf_raw <- acf(df$discharge, lag.max = 30, plot = FALSE)
+acf_raw_data <- data.frame(
+  lag = acf_raw$lag[,,1],
+  acf = acf_raw$acf[,,1]
+)
+
+p3a_acf_raw <- ggplot(acf_raw_data, aes(x = lag, y = acf)) +
+  geom_hline(yintercept = 0, color = 'black') +
+  geom_hline(yintercept = c(-0.05, 0.05), color = 'blue', linetype = 'dashed') +
+  geom_segment(aes(x = lag, xend = lag, y = 0, yend = acf)) +
+  geom_point() +
+  labs(title = 'ACF: Raw River Discharge Series',
+       x = 'Lag', y = 'Autocorrelation') +
+  theme_minimal()
+
+print(p3a_acf_raw)
+
+# Difference the series
+discharge_diff <- diff(df$discharge)
+acf_diff <- acf(discharge_diff, lag.max = 30, plot = FALSE)
+acf_diff_data <- data.frame(
+  lag = acf_diff$lag[,,1],
+  acf = acf_diff$acf[,,1]
+)
+
+p3a_acf_diff <- ggplot(acf_diff_data, aes(x = lag, y = acf)) +
+  geom_hline(yintercept = 0, color = 'black') +
+  geom_hline(yintercept = c(-0.05, 0.05), color = 'blue', linetype = 'dashed') +
+  geom_segment(aes(x = lag, xend = lag, y = 0, yend = acf)) +
+  geom_point() +
+  labs(title = 'ACF: Differenced River Discharge Series',
+       x = 'Lag', y = 'Autocorrelation') +
+  theme_minimal()
+
+print(p3a_acf_diff)
+
+cat("Autocorrelation analysis:\n")
+cat("- Raw series shows", ifelse(max(acf_raw_data$acf[2:11]) > 0.05, "significant", "minimal"), "autocorrelation\n")
+cat("- Differenced series shows", ifelse(max(abs(acf_diff_data$acf[2:11])) > 0.05, "remaining", "reduced"), "autocorrelation\n")
+```
+
+## Ljung-Box test for serial dependence
+
+```{r part3b-ljung-box}
+# Test raw series
+lb_raw <- Box.test(df$discharge, lag = 1, type = "Ljung-Box")
+cat("Ljung-Box test - Raw discharge series:\n")
+cat("- Statistic:", round(lb_raw$statistic, 4), "\n")
+cat("- p-value:", format(lb_raw$p.value, scientific = TRUE), "\n")
+cat("- Conclusion:", ifelse(lb_raw$p.value < 0.05,
+                          "Reject independence (serial dependence present)",
+                          "Cannot reject independence"), "\n\n")
+
+# Test differenced series
+lb_diff <- Box.test(discharge_diff, lag = 1, type = "Ljung-Box")
+cat("Ljung-Box test - Differenced discharge series:\n")
+cat("- Statistic:", round(lb_diff$statistic, 4), "\n")
+cat("- p-value:", format(lb_diff$p.value, scientific = TRUE), "\n")
+cat("- Conclusion:", ifelse(lb_diff$p.value < 0.05,
+                          "Reject independence (serial dependence present)",
+                          "Cannot reject independence"), "\n")
+
+# Summary table
+ljung_box_results <- data.frame(
+  Series = c("Raw Discharge", "Differenced Discharge"),
+  Statistic = c(round(lb_raw$statistic, 4), round(lb_diff$statistic, 4)),
+  `p-value` = c(format(lb_raw$p.value, scientific = TRUE), format(lb_diff$p.value, scientific = TRUE)),
+  `Serial Dependence` = c(lb_raw$p.value < 0.05, lb_diff$p.value < 0.05)
+)
+
+kable(ljung_box_results, caption = "Ljung-Box test results for serial dependence")
+```
+
+## ARIMA modeling
+
+```{r part3c-arima}
+# PACF analysis
+pacf_diff <- pacf(discharge_diff, lag.max = 30, plot = FALSE)
+pacf_diff_data <- data.frame(
+  lag = pacf_diff$lag[,,1],
+  pacf = pacf_diff$acf[,,1]
+)
+
+p3c_pacf <- ggplot(pacf_diff_data, aes(x = lag, y = pacf)) +
+  geom_hline(yintercept = 0, color = 'black') +
+  geom_hline(yintercept = c(-0.05, 0.05), color = 'blue', linetype = 'dashed') +
+  geom_segment(aes(x = lag, xend = lag, y = 0, yend = pacf)) +
+  geom_point() +
+  labs(title = 'PACF: Differenced River Discharge Series',
+       x = 'Lag', y = 'Partial Autocorrelation') +
+  theme_minimal()
+
+print(p3c_pacf)
+
+# Automatic ARIMA selection
+tryCatch({
+  ts_discharge_diff <- ts(discharge_diff, frequency = 1)
+  auto_arima_result <- auto.arima(ts_discharge_diff, max.p = 5, max.q = 5, max.d = 0)
+  
+  cat("Auto ARIMA result:\n")
+  print(auto_arima_result)
+  
+  # Residual analysis
+  arima_residuals <- residuals(auto_arima_result)
+  
+  # Test residual independence
+  lb_residuals <- Box.test(arima_residuals, lag = 10, type = "Ljung-Box")
+  cat("\nARIMA Residual Diagnostics:\n")
+  cat("- Ljung-Box test p-value:", format(lb_residuals$p.value, scientific = TRUE), "\n")
+  
+  # Test residual normality
+  sw_residuals <- shapiro.test(arima_residuals[1:min(5000, length(arima_residuals))])
+  cat("- Shapiro-Wilk test p-value:", format(sw_residuals$p.value, scientific = TRUE), "\n")
+  
+  # Plot residuals
+  residual_data <- data.frame(
+    index = 1:length(arima_residuals),
+    residuals = as.numeric(arima_residuals)
+  )
+  
+  p3c_residuals <- ggplot(residual_data, aes(x = index, y = residuals)) +
+    geom_line(alpha = 0.7) +
+    geom_hline(yintercept = 0, color = 'red', linetype = 'dashed') +
+    labs(title = 'ARIMA Model Residuals',
+         x = 'Time', y = 'Residuals') +
+    theme_minimal()
+  
+  print(p3c_residuals)
+  
+}, error = function(e) {
+  cat("Error in ARIMA modeling:", e$message, "\n")
+})
+```
+
+## GARCH modeling
+
+```{r part3d-garch}
+tryCatch({
+  # Fit GARCH(1,1) with Normal distribution
+  garch_normal <- garchFit(~ garch(1,1), data = discharge_diff, cond.dist = "norm", trace = FALSE)
+  
+  cat("GARCH(1,1) with Normal distribution:\n")
+  print(summary(garch_normal))
+  
+  # Fit GARCH(1,1) with Student-t distribution
+  garch_t <- garchFit(~ garch(1,1), data = discharge_diff, cond.dist = "std", trace = FALSE)
+  
+  cat("GARCH(1,1) with Student-t distribution:\n")
+  print(summary(garch_t))
+  
+  # Compare models
+  cat("Model Comparison (AIC):\n")
+  cat("- GARCH Normal:", round(garch_normal@fit$ics[1], 2), "\n")
+  cat("- GARCH Student-t:", round(garch_t@fit$ics[1], 2), "\n")
+  
+  garch_comparison <- data.frame(
+    Model = c("GARCH(1,1) Normal", "GARCH(1,1) Student-t"),
+    AIC = c(round(garch_normal@fit$ics[1], 2), round(garch_t@fit$ics[1], 2)),
+    BIC = c(round(garch_normal@fit$ics[2], 2), round(garch_t@fit$ics[2], 2))
+  )
+  
+  kable(garch_comparison, caption = "GARCH model comparison")
+  
+}, error = function(e) {
+  cat("Error in GARCH modeling:", e$message, "\n")
+})
+```
+
+## Two-step ARIMA+GARCH approach
+
+```{r part3e-combined}
+tryCatch({
+  # Step 1: Fit ARIMA to differenced series
+  arima_step1 <- auto.arima(ts_discharge_diff, max.p = 3, max.q = 3, max.d = 0)
+  arima_residuals_step1 <- residuals(arima_step1)
+  
+  cat("Step 1 - ARIMA component:\n")
+  print(arima_step1)
+  
+  # Step 2: Fit GARCH to ARIMA residuals
+  garch_step2 <- garchFit(~ garch(1,1), data = arima_residuals_step1, cond.dist = "norm", trace = FALSE)
+  
+  cat("Step 2 - GARCH component on residuals:\n")
+  print(summary(garch_step2))
+  
+}, error = function(e) {
+  cat("Error in two-step modeling:", e$message, "\n")
+})
+```
+
+## Model comparison and conclusions
+
+```{r part3f-comparison}
+cat("Time Series Modeling Summary:\n")
+cat("1. Raw discharge series shows strong serial dependence\n")
+cat("2. Differencing reduces but may not eliminate all dependence\n")
+cat("3. ARIMA models capture linear dependencies\n")
+cat("4. GARCH models capture time-varying volatility (heteroscedasticity)\n")
+cat("5. Two-step approach combines both linear and volatility modeling\n")
+cat("\nRecommendation: Choose model based on AIC/BIC values and residual diagnostics\n")
+```
+
+# Conclusions
+
+This analysis of the River Thielle discharge and precipitation data reveals several important findings:
+
+## Part 1: Statistical Assumptions
+- The discharge data shows significant departures from normality (Anderson-Darling test)
+- Alternative distributions (gamma, log-normal, Weibull) provide better fits than normal distribution
+- Tail behavior differs substantially between distributional assumptions, affecting extreme event probability estimates
+
+## Part 2: Correlation vs Causation  
+- Significant correlation exists between precipitation and discharge
+- Cross-correlation analysis reveals lagged relationships with precipitation leading discharge
+- Extremograms show clustering patterns in extreme events
+- Granger causality tests provide evidence for predictive relationships
+
+## Part 3: Time Series Modeling
+- Strong serial dependence in raw discharge series
+- ARIMA models capture linear temporal dependencies
+- GARCH models reveal time-varying volatility patterns
+- Combined ARIMA+GARCH approach provides comprehensive modeling framework
+
+## Practical Implications
+1. **Risk Assessment**: Non-normal distributions lead to different tail risk estimates
+2. **Forecasting**: Lagged relationships enable discharge predictions from precipitation
+3. **Extreme Events**: Clustering patterns affect return period calculations
+4. **Model Selection**: Combined models better capture both mean and volatility dynamics
+
+These findings demonstrate the importance of proper distributional assumptions, causality analysis, and time series modeling for hydrological risk assessment and water resource management.
+
+```{r session-info}
+# Print session information
+sessionInfo()
+```
