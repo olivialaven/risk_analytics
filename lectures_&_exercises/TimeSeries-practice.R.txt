@@ -1,0 +1,212 @@
+library(fpp2)
+
+# Completely adapted from Hyndman's book 
+
+## Basics about time series, ts objects, ACFs, generation of White noise
+
+# Visualise time series data, example with a10 
+# anti-diabetic drug subsidy in Australia
+a10
+autoplot(a10)
+# clear seasonal pattern and trend 
+# can further check seasonality 
+ggseasonplot(a10, year.labels=T, year.labels.left=T)
+
+# lag plots can also be used (2.7 in Hyndman)
+
+# combination of trended and seasonal effects
+aelec <- window(elec, start=1980)
+autoplot(aelec)
+ggAcf(aelec, lag=50)
+
+# Note: to generate white noise, can use a Normal distribution
+wn <- rnorm(100)
+autoplot(wn) # does not work, with fpp2, need a ts() object
+autoplot(ts(wn))
+ggAcf(ts(wn)) # note: the blue dashed lines correspond to +-2/sqrt(n), with n the length of the time series
+
+
+## Stationarity, trend and seasonality  
+
+autoplot(elecequip) # clearly, some seasonality and trend
+# can use stl() to decompose 
+autoplot(stl(elecequip, t.window=13, s.window="periodic")) 
+# t.window is the trend-cycle window, gives the number of consecutive observations to use to estimate the trend
+# s.window is the number of consecutive years to use in estimating values in the seasonal component. 
+# note s.window is mandatory. Here, periodic means that seasonal pattern is going to be identical across years
+
+# to obtain the components, use seasonal() or trendcycle(), e.g. 
+seasonal(stl(elecequip, t.window=13, s.window="periodic"))
+plot(seasonal(stl(elecequip, t.window=13, s.window="periodic")))
+
+
+## ARIMA models 
+
+# first, differencing is possible using diff()
+# this stabilises the mean of the series, whereas logarithms stabilise the variance. 
+autoplot(goog200) # clear trend pattern 
+autoplot(diff(goog200)) 
+ggAcf(goog200)
+ggAcf(diff(goog200))
+
+# for the log, back to a10
+autoplot(a10)
+ggAcf(a10)
+autoplot(log(a10)) #variance is smaller, yet trend and seasonality still here
+ggAcf(log(a10))
+
+ggAcf(diff(a10)) #differencing is not enough...
+
+ggAcf(diff(log(a10), 12)) #sometimes, still not enough... 
+
+autoplot(diff(diff(log(a10), 12), 1)) 
+autoplot(log(a10)) #but much better in terms of stationarity...
+
+ggAcf(diff(diff(log(a10), 12), 1))
+
+acf(diff(diff(log(a10), 12), 1))
+
+## Generation of AR(1) process
+y1 <- 10
+y <- c(y1)
+n <- 1000
+a <- 0.85
+
+for(i in 2:n) {
+  y[i] <- a * y[i-1] + rnorm(1)
+}
+
+autoplot(ts(y))
+
+auto.arima(y)
+
+# Generation of MA(1) process 
+y1 <- 10
+y2 <- c(y1)
+n <- 1000
+a <- 0.5
+ei <- c(rnorm(1))
+
+for(i in 2:n) {
+  ei[i] <- rnorm(1)
+  y2[i] <- y1 + a*ei[i-1] + ei[i]
+}
+
+autoplot(ts(y2))
+
+auto.arima(y2)
+
+# ACF and PACF plots
+# they both measure autocorrelations. However, PACF removes autocorrelations in the middle. 
+uschange
+autoplot(uschange[, "Consumption"])
+ggAcf(uschange[, "Consumption"])
+ggPacf(uschange[, "Consumption"]) # some autocorrelation can be explained through propagation 
+
+# Now, how to read ACF or PACF? 
+# => can be done visually, if either AR or MA but not ARMA. 
+# ARIMA(p, d, 0) if 1) ACF is exponentially decaying/sinusoidal + 2) significant spike at lag p in PACF but none after
+# ARIMA(0, d, q) if 1) PACF is exponentially decaying/sinusoidal + 2) there is significant spike at lag q in ACF, but none beyond lag q. 
+
+# Above, 3 spikes in ACF and 3 significant spikes in PACF (except at 22). Can ignore just one spike off limits, not in the first few. 
+# => suggest ARIMA(3,0,0), as PACF decreases. 
+mod <- Arima(uschange[, "Consumption"], order = c(3,0,0))
+mod #even slightly better 
+auto.mod <- auto.arima(uschange[, "Consumption"])
+auto.mod 
+
+# plot of the residuals 
+autoplot(mod$residuals)
+autoplot(auto.mod$residuals)
+
+# formally test, e.g. with Anderson-Darling
+library(DescTools)
+AndersonDarlingTest(mod$residuals, null = "pnorm") #not sufficient... 
+library(cmstatr)
+anderson_darling_normal(x = mod$residuals)
+checkresiduals(mod$residuals) # can also use a built-in function
+
+# New topic: fitting distributions
+# Example when generating t-distributed values and comparing them to the Normal
+library(MASS)
+n <- 1000
+df <- 5
+# df <- 100
+xt <- rt(n, df)
+autoplot(ts(xt))
+
+fitted.dist <- fitdistr(xt, densfun = "Normal")
+seqt <- seq(from = 0, to = 1, length = 100)
+plot(seqt, qnorm(seqt, fitted.dist$estimate[1], fitted.dist$estimate[2]), type="l")
+lines(seqt, qt(seqt, 5), col = 2)
+
+seqt2 <- seq(from = -5, to = 5, length = 100)
+plot(seqt2, dnorm(seqt2, fitted.dist$estimate[1], fitted.dist$estimate[2]), type="l", ylim = c(0, 0.4))
+lines(seqt2, dt(seqt2, 5), col = 2)
+
+## qqplot comparisons 
+qqplot(rt(n, df = 5), xt)
+qqline(xt, distribution = function(p) qt(p, df=5))
+
+qqplot(rnorm(n, mean = fitted.dist$estimate[1], sd = fitted.dist$estimate[2]), xt)
+qqline(xt, distribution = function(p) qnorm(p, mean = fitted.dist$estimate[1], sd = fitted.dist$estimate[2]))
+
+## Anderson-Darling
+AndersonDarlingTest(xt, null = "pnorm", mean = fitted.dist$estimate[1], sd = fitted.dist$estimate[2])
+AndersonDarlingTest(xt, null = "pt", df = 5)
+
+## Garch fit 
+library(quantmod)
+googl <- getSymbols("GOOGL", from="2010-01-01", to="2022-08-03", auto.assign = F)
+head(googl[, 1:5], 5)
+daily_ret <- (googl$GOOGL.Close - stats::lag(googl$GOOGL.Close)) / stats::lag(googl$GOOGL.Close)
+daily_ret <- data.frame(index(daily_ret), daily_ret)
+colnames(daily_ret) <- c("date", "return")
+rownames(daily_ret) <- 1:nrow(daily_ret)
+
+plot(daily_ret, type="l") # change of variance across time, can try to stabilise using log returns
+
+neg.log <- function(x) {
+  y <- c()
+  for(i in 1:length(x)-1) {
+    y[i] <- -log(x[i+1]/x[i])
+  }
+  return(y)
+}
+
+tmp <- as.vector(googl$GOOGL.Close)
+yt <- neg.log(tmp)
+
+# plot the series and assess the variance 
+plot(yt, type="l")
+
+# draw histogram and compare with normal distribution 
+hist(yt, xlab = "negative log-returns", prob = TRUE)
+curve(dnorm(x, mean = mean(yt), sd = sd(yt)), add = TRUE)
+
+# auto.arima at this stage
+mod5 <- auto.arima(yt)
+mod5
+checkresiduals(mod5$residuals) # independance of residuals
+Box.test(yt, lag=1, "Ljung")   # reject H0 (independance of data)
+
+# check acf of squared residuals
+ggAcf(mod5$residuals^2)
+Box.test(mod5$residuals^2, lag=1, type="Ljung-Box") #formally 
+
+# volatility check
+library(fGarch)
+plot(volatility(as.vector(googl$GOOGL.Close)), type="l") #varying volatility over time
+
+# fit a Garch(1,1)
+garch1 <- garchFit(~ garch(1,1), cond.dist = "std", data = yt)
+plot(garch1)
+
+# usual specification 
+ar1 <- arima(yt, order = c(1,0,0))
+garch2 <- garchFit(~ garch(1,1), cond.dist = "std", data = ar1$residuals)
+plot(garch2)
+
+# Simulate garch data
+yt <- garchSim(garchSpec(model = list()), 1000)
+plot(volatility(yt), type="l") #varying volatility over time
