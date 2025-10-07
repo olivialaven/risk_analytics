@@ -43,31 +43,18 @@ try{
 	exit 1
 }
 
-# Render the RMarkdown report to Markdown and Word using a temporary R script (avoids PowerShell parsing issues)
-Write-Host "Preparing R render script in: $jjPath"
+# Render the RMarkdown report using the static R script shipped in this folder
+Write-Host "Running prebuilt R render script (render_practical1.R) via Rscript..."
 $renderScript = Join-Path -Path $jjPath -ChildPath 'render_practical1.R'
-$rLines = @()
-$rLines += "setwd('$projectRootFs')"
-$rLines += "Sys.setenv(RSTUDIO_PANDOC='C:/Program Files/Pandoc')"
-$rLines += "cat('Rendering MD to: $mdOut\\n')"
-$rLines += "rmarkdown::render(\"$rmdAbs\", output_format = rmarkdown::md_document(), output_file = \"$mdOut\", knit_root_dir = normalizePath(getwd()))"
-$rLines += "cat('Rendering DOCX to: $docxOut\\n')"
-$rLines += "rmarkdown::render(\"$rmdAbs\", output_format = 'word_document', output_file = \"$docxOut\", knit_root_dir = normalizePath(getwd()))"
-
-# Write the R render script (UTF8)
-try{
-	$rLines | Out-File -FilePath $renderScript -Encoding UTF8 -Force
-	Write-Host "Wrote render script: $renderScript"
-} catch{
-	Write-Error "Failed to write render script: $_"
-}
-
-Write-Host "Running R render script via Rscript..."
-try{
-	& $Rscript $renderScript
-	Write-Host "R render script completed; outputs (md/docx) should be in: $jjPath"
-} catch{
-	Write-Error "R render script failed: $_"
+if(-not (Test-Path -Path $renderScript)){
+	Write-Error "Render script not found: $renderScript. Ensure render_practical1.R exists in $jjPath"
+} else {
+	try{
+		& $Rscript $renderScript
+		Write-Host "R render script completed; check for outputs in: $jjPath"
+	} catch{
+		Write-Error "R render script failed: $_"
+	}
 }
 
 Write-Host 'Done. Outputs will be saved in the parent practical_1/ directory (figures, RDS) and rendered files in practical_1/JJs_take/'.
