@@ -220,7 +220,8 @@ res_rev <- list()
 for(lag_f in 0:3){
   res2 <- Extreme_causality_test(yseries, xseries, z = NULL, lag_future = lag_f, p_value_computation = FALSE, bootstrap_repetitions = 50)
   res_rev[[as.character(lag_f)]] <- res2
-  cat('Reverse Lag', lag_f, ':', as.character(res2$output), '\n')
+  # Print the result text and also include the numeric CTC and baseline for consistency
+  cat('Reverse Lag', lag_f, ':', as.character(res2$output), 'CTC=', res2$CTC, 'baseline=', res2$baseline, '\n')
 }
 
 # Save quick results to RDS for later inspection
