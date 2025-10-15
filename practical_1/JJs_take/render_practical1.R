@@ -16,6 +16,7 @@ cat("Current working directory:", getwd(), "\n")
 required_files <- c(
   "Combined_Report.Rmd",
   "Assignment_Summary.Rmd",
+  "Practical1_FullReport.Rmd",
   "../River_and_precip_Neuchatel.csv"
 )
 
@@ -86,6 +87,27 @@ tryCatch({
   cat("Error rendering Combined_Report.Rmd:", e$message, "\n")
 })
 
+# Render the FULL SUBMISSION report (MAIN)
+cat("\n=== Rendering Full Submission Report ===\n")
+tryCatch({
+  # Word version (PRIMARY)
+  rmarkdown::render("Practical1_FullReport.Rmd",
+                   output_format = "word_document", 
+                   output_file = "Practical1_FullReport.docx",
+                   output_dir = output_dir)
+  cat("✓ Full Report Word document rendered successfully\n")
+  
+  # HTML version (REFERENCE)
+  rmarkdown::render("Practical1_FullReport.Rmd",
+                   output_format = "html_document",
+                   output_file = "Practical1_FullReport.html",
+                   output_dir = output_dir)
+  cat("✓ Full Report HTML rendered successfully\n")
+  
+}, error = function(e) {
+  cat("Error rendering Practical1_FullReport.Rmd:", e$message, "\n")
+})
+
 # List output files
 cat("\n=== Rendered Files ===\n")
 output_files <- c(
@@ -93,7 +115,9 @@ output_files <- c(
   "Assignment_Summary.docx", 
   "Assignment_Summary.md",
   "Combined_Report.html",
-  "Combined_Report.docx"
+  "Combined_Report.docx",
+  "Practical1_FullReport.docx",
+  "Practical1_FullReport.html"
 )
 
 for(file in output_files) {
@@ -108,6 +132,7 @@ for(file in output_files) {
 cat("\nRendering complete!\n")
 cat("\n=== MAIN DELIVERABLES ===\n")
 cat("The assignment solutions are in:\n")
+cat("- Practical1_FullReport.docx (SUBMISSION VERSION)\n")
 cat("- Assignment_Summary.html\n") 
 cat("- Assignment_Summary.docx\n")
 cat("- Assignment_Summary.md\n")
