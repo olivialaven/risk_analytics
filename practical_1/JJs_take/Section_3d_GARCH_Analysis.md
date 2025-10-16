@@ -103,7 +103,7 @@ This low value reflects the frequent occurrence of extreme discharge events (flo
 |-----------|-------|----------------|
 | Mean | 0.0000 | Correctly centered |
 | Standard Deviation | 1.5536 | Close to 1 (good standardization) |
-| Skewness | 10.9943 | **Highly right-skewed** |
+| Skewness | 10.9943 | **Highly right-skewed** |    
 | Kurtosis | 301.5713 | **Extreme heavy tails** |
 
 #### Student-t GARCH Model
