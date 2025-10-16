@@ -1,0 +1,639 @@
+﻿Rscript.exe : 
+Au caractère Ligne:1 : 92
++ ... JJs_take" ; & "C:\Program Files\R\R-4.5.1\bin\Rscript.exe" -e "source ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Attaching package: 'lubridate'
+
+The following objects are masked from 'package:base':
+
+    date, intersect, setdiff, union
+
+
+Attaching package: 'dplyr'
+
+The following objects are masked from 'package:stats':
+
+    filter, lag
+
+The following objects are masked from 'package:base':
+
+    intersect, setdiff, setequal, union
+
+Loading required package: MASS
+
+Attaching package: 'MASS'
+
+The following object is masked from 'package:dplyr':
+
+    select
+
+Loading required package: survival
+Loading required package: zoo
+
+Attaching package: 'zoo'
+
+The following objects are masked from 'package:base':
+
+    as.Date, as.Date.numeric
+
+Registered S3 method overwritten by 'quantmod':
+  method            from
+  as.zoo.data.frame zoo 
+NOTE: Packages 'fBasics', 'timeDate', and 'timeSeries' are no longer
+attached to the search() path when 'fGarch' is attached.
+
+If needed attach them yourself in your R script by e.g.,
+        require("timeSeries")
+Loading data from: ../River_and_precip_Neuchatel.csv 
+Data loaded successfully. Dimensions: 7819 x 3 
+Date range: 1930-06-02 to 2014-08-31 
+JuroExtremes.R loaded successfully
+
+=== PART 0: Data Exploration ===
+Summary statistics:
+      date              discharge          precip      
+ Min.   :1930-06-02   Min.   : 1.702   Min.   : 0.000  
+ 1st Qu.:1951-06-24   1st Qu.: 3.763   1st Qu.: 0.000  
+ Median :1972-07-17   Median : 5.470   Median : 0.000  
+ Mean   :1972-07-18   Mean   : 7.925   Mean   : 3.069  
+ 3rd Qu.:1993-08-08   3rd Qu.: 9.014   3rd Qu.: 2.900  
+ Max.   :2014-08-31   Max.   :89.000   Max.   :87.300  
+Missing values - Discharge: 0 Precipitation: 0 
+Extreme values check:
+Discharge - Min: 1.702 Max: 89 
+Precipitation - Min: 0 Max: 87.3 
+Periods of high discharge variability detected: 390 time windows
+
+=== PART 1: Statistical Assumptions for Modeling Extremes ===
+
+Part 1(a): Visual assessment of distribution
+Skewness: 3.195 
+Kurtosis: 18.388 
+
+Part 1(b): Formal assessment with Anderson-Darling test
+Anderson-Darling test for normality:
+Statistic: 699.5113 
+p-value: 3.7e-24 
+Conclusion: Reject normality (p < 0.05) 
+
+Part 1(c): Fitting alternative distributions
+Successfully fit gamma distribution
+Successfully fit lnorm distribution
+Successfully fit weibull distribution
+Successfully fit exp distribution
+AIC comparison:
+   lnorm    gamma  weibull      exp 
+44314.99 46117.76 47007.60 48011.55 
+Best fitting distribution (lowest AIC): lnorm 
+
+Part 1(d): Tail comparison and interpretation
+Tail probability comparison (P(X > 22.27 )):
+Normal distribution: 0.025636 
+lnorm distribution: 0.027554 
+Ratio ( lnorm /Normal): 1.07 
+
+=== PART 2: Correlation versus Causation ===
+
+Part 2(a): Correlation test
+Correlation between discharge and precipitation:
+Correlation coefficient: 0.0118 
+p-value: 0.2953707 
+95% Confidence interval: -0.0103 0.034 
+Conclusion: No significant correlation (p >= 0.05) 
+
+Part 2(b): Cross-correlation function
+Strongest positive correlation: 0.4115 at lag -2 days
+
+Part 2(c): Extremograms
+Extreme thresholds:
+Precipitation (95th percentile): 16.01 mm
+Discharge (95th percentile): 22.27 m┬│/s
+Extreme clustering strength:
+Precipitation:  10 lags above 0.05 threshold
+Discharge:  19 lags above 0.05 threshold
+Stronger clustering in: Discharge 
+
+Part 2(d): Granger causality tests
+Granger test - Precipitation ΓåÆ Discharge:
+Granger causality test
+
+Model 1: ts_discharge ~ Lags(ts_discharge, 1:3) + Lags(ts_precip, 1:3)
+Model 2: ts_discharge ~ Lags(ts_discharge, 1:3)
+  Res.Df Df      F    Pr(>F)    
+1   7809                        
+2   7812 -3 917.85 < 2.2e-16 ***
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+Granger test - Discharge ΓåÆ Precipitation:
+Granger causality test
+
+Model 1: ts_precip ~ Lags(ts_precip, 1:3) + Lags(ts_discharge, 1:3)
+Model 2: ts_precip ~ Lags(ts_precip, 1:3)
+  Res.Df Df      F Pr(>F)
+1   7809                 
+2   7812 -3 0.0613 0.9802
+
+Extreme causality tests:
+Extreme causality: Precipitation ΓåÆ Discharge
+Lag 0 : No causality | CTC = 0.5188 | Baseline = 0.3216 
+Lag 1 : No causality | CTC = 0.4793 | Baseline = 0.2583 
+Lag 2 : Evidence of causality | CTC = 0.8268 | Baseline = 0.3338 
+Lag 3 : Evidence of causality | CTC = 0.8772 | Baseline = 0.3927 
+Lag 4 : Evidence of causality | CTC = 0.8826 | Baseline = 0.4391 
+Lag 5 : Evidence of causality | CTC = 0.8922 | Baseline = 0.4792 
+
+Extreme causality: Discharge ΓåÆ Precipitation
+Lag 0 : No causality | CTC = 0.7038 | Baseline = 0.6534 
+Lag 1 : No causality | CTC = 0.6952 | Baseline = 0.6306 
+Lag 2 : No causality | CTC = 0.7451 | Baseline = 0.6909 
+Lag 3 : No causality | CTC = 0.7808 | Baseline = 0.738 
+Lag 4 : No causality | CTC = 0.8155 | Baseline = 0.7754 
+Lag 5 : No causality | CTC = 0.8375 | Baseline = 0.8052 
+
+Part 2(e): Extreme events and predictive insights
+Based on causality analysis:
+(a) Extreme precipitation spike ΓåÆ Expected discharge response: See lag analysis above
+(b) Extreme discharge surge ΓåÆ Future precipitation inference: See reverse causality above
+
+=== PART 3: Time Series Modeling and Volatility ===
+
+Part 3(a): Autocorrelation patterns
+ACF analysis: Raw vs differenced series prepared for visual comparison
+
+Part 3(b): Ljung-Box test for serial dependence
+Ljung-Box test - Raw discharge series:
+Statistic: 4459.052 
+p-value: 0 
+Conclusion: Reject independence (serial dependence present) 
+Ljung-Box test - Differenced discharge series:
+Statistic: 14.6714 
+p-value: 0.0001279746 
+Conclusion: Reject independence (serial dependence present) 
+
+Part 3(c): ARIMA modeling
+
+Based on ACF/PACF analysis, plausible models include:
+- ARIMA(1,0,0): First-order autoregressive
+- ARIMA(0,0,1): First-order moving average
+- ARIMA(1,0,1): Mixed ARMA model
+- ARIMA(2,0,2): Higher-order mixed model
+
+Using auto.arima() to select optimal model...
+
+=== SELECTED ARIMA MODEL ===
+Series: ts_discharge_diff 
+ARIMA(2,0,2) with non-zero mean 
+
+Coefficients:
+         ar1     ar2      ma1      ma2     mean
+      0.2624  0.2889  -0.4178  -0.5640  -0.0008
+s.e.  0.0525  0.0458   0.0491   0.0513   0.0022
+
+sigma^2 = 22.76:  log likelihood = -23307.46
+AIC=46626.92   AICc=46626.93   BIC=46668.71
+
+=== RESIDUAL STATISTICS ===
+Mean: -0.001123 
+SD: 4.7695 
+Skewness: 4.1227 
+Kurtosis: 37.3354 
+
+=== RESIDUAL INDEPENDENCE TEST ===
+Ljung-Box test on ARIMA residuals (lag=10):
+Q-statistic: 57.807 
+p-value: 0 
+Interpretation: Some autocorrelation remains 
+
+=== RESIDUAL NORMALITY TEST ===
+Shapiro-Wilk test on ARIMA residuals:
+W-statistic: 0.6298 
+p-value: < 0.001 
+Interpretation: Residuals deviate from normality (heavy tails) 
+
+=== VARIANCE ANALYSIS ===
+First half variance: 28.3773 
+Second half variance: 17.123 
+Variance ratio: 0.6034 
+
+=== DIAGNOSTIC SUMMARY ===
+1. Independence: Γ£ù Some autocorrelation remains 
+2. Normality: Γ£ù Heavy tails detected 
+3. Constant variance: Γ£ô Approximately constant 
+
+=== RECOMMENDATIONS ===
+- Heavy-tailed residuals suggest transformations may help:
+  * Log transformation: log(discharge + constant)
+  * Box-Cox transformation: optimal lambda estimation
+  * Student-t innovations in ARIMA+GARCH framework
+- Remaining autocorrelation suggests:
+  * Try higher-order ARIMA models
+  * Consider seasonal ARIMA if seasonal patterns exist
+  * Use ARIMA+GARCH to capture volatility clustering
+
+Part 3(d): GARCH modeling
+Fitting GARCH(1,1) models with Normal and Student-t conditional distributions
+
+Fitting GARCH(1,1) with Normal distribution...
+
+--- GARCH(1,1) with Normal distribution ---
+
+Title:
+ GARCH Modelling 
+
+Call:
+ garchFit(formula = ~garch(1, 1), data = discharge_diff, cond.dist = "norm", 
+    trace = FALSE) 
+
+Mean and Variance Equation:
+ data ~ garch(1, 1)
+<environment: 0x000001b27c375390>
+ [data = discharge_diff]
+
+Conditional Distribution:
+ norm 
+
+Coefficient(s):
+      mu     omega    alpha1     beta1  
+0.011949  3.813274  0.564019  0.493041  
+
+Std. Errors:
+ based on Hessian 
+
+Error Analysis:
+        Estimate  Std. Error  t value Pr(>|t|)    
+mu       0.01195     0.03741    0.319    0.749    
+omega    3.81327     0.17206   22.162   <2e-16 ***
+alpha1   0.56402     0.03448   16.357   <2e-16 ***
+beta1    0.49304     0.01642   30.030   <2e-16 ***
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+Log Likelihood:
+ -22157.83    normalized:  -2.834206 
+
+Description:
+ Thu Oct 16 17:26:33 2025 by user: JJ 
+
+
+Standardised Residuals Tests:
+                                   Statistic   p-Value
+ Jarque-Bera Test   R    Chi^2  1.386936e+06 0.0000000
+ Shapiro-Wilk Test  R    W                NA        NA
+ Ljung-Box Test     R    Q(10)  1.778259e+02 0.0000000
+ Ljung-Box Test     R    Q(15)  1.862887e+02 0.0000000
+ Ljung-Box Test     R    Q(20)  1.905897e+02 0.0000000
+ Ljung-Box Test     R^2  Q(10)  1.359333e+00 0.9993107
+ Ljung-Box Test     R^2  Q(15)  2.304116e+00 0.9999249
+ Ljung-Box Test     R^2  Q(20)  2.507418e+00 0.9999991
+ LM Arch Test       R    TR^2   1.814745e+00 0.9996415
+
+Information Criterion Statistics:
+     AIC      BIC      SIC     HQIC 
+5.669436 5.672999 5.669435 5.670657 
+
+
+Title:
+ GARCH Modelling 
+
+Call:
+ garchFit(formula = ~garch(1, 1), data = discharge_diff, cond.dist = "norm", 
+    trace = FALSE) 
+
+Mean and Variance Equation:
+ data ~ garch(1, 1)
+<environment: 0x000001b27c375390>
+ [data = discharge_diff]
+
+Conditional Distribution:
+ norm 
+
+Coefficient(s):
+      mu     omega    alpha1     beta1  
+0.011949  3.813274  0.564019  0.493041  
+
+Std. Errors:
+ based on Hessian 
+
+Error Analysis:
+        Estimate  Std. Error  t value Pr(>|t|)    
+mu       0.01195     0.03741    0.319    0.749    
+omega    3.81327     0.17206   22.162   <2e-16 ***
+alpha1   0.56402     0.03448   16.357   <2e-16 ***
+beta1    0.49304     0.01642   30.030   <2e-16 ***
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+Log Likelihood:
+ -22157.83    normalized:  -2.834206 
+
+Description:
+ Thu Oct 16 17:26:33 2025 by user: JJ 
+
+
+Standardised Residuals Tests:
+                                   Statistic   p-Value
+ Jarque-Bera Test   R    Chi^2  1.386936e+06 0.0000000
+ Shapiro-Wilk Test  R    W                NA        NA
+ Ljung-Box Test     R    Q(10)  1.778259e+02 0.0000000
+ Ljung-Box Test     R    Q(15)  1.862887e+02 0.0000000
+ Ljung-Box Test     R    Q(20)  1.905897e+02 0.0000000
+ Ljung-Box Test     R^2  Q(10)  1.359333e+00 0.9993107
+ Ljung-Box Test     R^2  Q(15)  2.304116e+00 0.9999249
+ Ljung-Box Test     R^2  Q(20)  2.507418e+00 0.9999991
+ LM Arch Test       R    TR^2   1.814745e+00 0.9996415
+
+Information Criterion Statistics:
+     AIC      BIC      SIC     HQIC 
+5.669436 5.672999 5.669435 5.670657 
+
+
+Standardized residuals - Normal GARCH:
+Mean: 0.095 
+SD: 0.9955 
+Skewness: 5.1023 
+Kurtosis: 67.4479 
+
+
+Fitting GARCH(1,1) with Student-t distribution...
+
+--- GARCH(1,1) with Student-t distribution ---
+
+Title:
+ GARCH Modelling 
+
+Call:
+ garchFit(formula = ~garch(1, 1), data = discharge_diff, cond.dist = "std", 
+    trace = FALSE) 
+
+Mean and Variance Equation:
+ data ~ garch(1, 1)
+<environment: 0x000001b280c94da0>
+ [data = discharge_diff]
+
+Conditional Distribution:
+ std 
+
+Coefficient(s):
+       mu      omega     alpha1      beta1      shape  
+-0.011949   0.419003   1.000000   0.484183   2.468997  
+
+Std. Errors:
+ based on Hessian 
+
+Error Analysis:
+        Estimate  Std. Error  t value Pr(>|t|)    
+mu      -0.01195     0.01018   -1.174    0.241    
+omega    0.41900     0.04617    9.075   <2e-16 ***
+alpha1   1.00000     0.05436   18.397   <2e-16 ***
+beta1    0.48418     0.01491   32.482   <2e-16 ***
+shape    2.46900     0.03095   79.786   <2e-16 ***
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+Log Likelihood:
+ -17952.86    normalized:  -2.296349 
+
+Description:
+ Thu Oct 16 17:26:36 2025 by user: JJ 
+
+
+Standardised Residuals Tests:
+                                   Statistic      p-Value
+ Jarque-Bera Test   R    Chi^2  2.919643e+07 0.000000e+00
+ Shapiro-Wilk Test  R    W                NA           NA
+ Ljung-Box Test     R    Q(10)  7.507849e+01 4.593326e-12
+ Ljung-Box Test     R    Q(15)  8.010009e+01 6.696410e-11
+ Ljung-Box Test     R    Q(20)  8.566547e+01 4.202054e-10
+ Ljung-Box Test     R^2  Q(10)  3.914448e-01 9.999980e-01
+ Ljung-Box Test     R^2  Q(15)  4.844770e-01 1.000000e+00
+ Ljung-Box Test     R^2  Q(20)  7.864188e-01 1.000000e+00
+ LM Arch Test       R    TR^2   4.123875e-01 9.999999e-01
+
+Information Criterion Statistics:
+     AIC      BIC      SIC     HQIC 
+4.593978 4.598432 4.593977 4.595504 
+
+
+Title:
+ GARCH Modelling 
+
+Call:
+ garchFit(formula = ~garch(1, 1), data = discharge_diff, cond.dist = "std", 
+    trace = FALSE) 
+
+Mean and Variance Equation:
+ data ~ garch(1, 1)
+<environment: 0x000001b280c94da0>
+ [data = discharge_diff]
+
+Conditional Distribution:
+ std 
+
+Coefficient(s):
+       mu      omega     alpha1      beta1      shape  
+-0.011949   0.419003   1.000000   0.484183   2.468997  
+
+Std. Errors:
+ based on Hessian 
+
+Error Analysis:
+        Estimate  Std. Error  t value Pr(>|t|)    
+mu      -0.01195     0.01018   -1.174    0.241    
+omega    0.41900     0.04617    9.075   <2e-16 ***
+alpha1   1.00000     0.05436   18.397   <2e-16 ***
+beta1    0.48418     0.01491   32.482   <2e-16 ***
+shape    2.46900     0.03095   79.786   <2e-16 ***
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+Log Likelihood:
+ -17952.86    normalized:  -2.296349 
+
+Description:
+ Thu Oct 16 17:26:36 2025 by user: JJ 
+
+
+Standardised Residuals Tests:
+                                   Statistic      p-Value
+ Jarque-Bera Test   R    Chi^2  2.919643e+07 0.000000e+00
+ Shapiro-Wilk Test  R    W                NA           NA
+ Ljung-Box Test     R    Q(10)  7.507849e+01 4.593326e-12
+ Ljung-Box Test     R    Q(15)  8.010009e+01 6.696410e-11
+ Ljung-Box Test     R    Q(20)  8.566547e+01 4.202054e-10
+ Ljung-Box Test     R^2  Q(10)  3.914448e-01 9.999980e-01
+ Ljung-Box Test     R^2  Q(15)  4.844770e-01 1.000000e+00
+ Ljung-Box Test     R^2  Q(20)  7.864188e-01 1.000000e+00
+ LM Arch Test       R    TR^2   4.123875e-01 9.999999e-01
+
+Information Criterion Statistics:
+     AIC      BIC      SIC     HQIC 
+4.593978 4.598432 4.593977 4.595504 
+
+
+Standardized residuals - Student-t GARCH:
+Mean: 0.2072 
+SD: 1.5535 
+Skewness: 10.9942 
+Kurtosis: 301.5713 
+
+=== MODEL COMPARISON ===
+AIC (Normal):    5.6694 
+AIC (Student-t): 4.594 
+Difference:      1.0755 
+Best model:  Student-t 
+
+GARCH parameters (Student-t model):
+omega (constant): 0.419 
+alpha1 (ARCH):   1 
+beta1 (GARCH):   0.4842 
+Persistence (alpha1 + beta1): 1.4842 
+Degrees of freedom: 2.469 
+
+=== RESIDUAL DIAGNOSTICS INTERPRETATION ===
+1. Volatility clustering: GARCH model captures time-varying volatility
+2. Heavy tails: Student-t model significantly outperforms Normal (lower AIC)
+3. Persistence: High alpha1 + beta1 indicates volatility persistence
+4. Extreme kurtosis: Even standardized residuals show heavy tails
+5. Skewness: Positive skewness indicates more extreme positive shocks
+
+Part 3(e): Two-step ARIMA+GARCH modeling
+Two-step ARIMA+GARCH model:
+ARIMA component:
+Series: ts_discharge_diff 
+ARIMA(2,0,2) with zero mean 
+
+Coefficients:
+         ar1     ar2      ma1      ma2
+      0.2644  0.2857  -0.4198  -0.5608
+s.e.  0.0526  0.0461   0.0492   0.0516
+
+sigma^2 = 22.76:  log likelihood = -23307.53
+AIC=46625.05   AICc=46625.06   BIC=46659.87
+GARCH component on residuals:
+
+Title:
+ GARCH Modelling 
+
+Call:
+ garchFit(formula = ~garch(1, 1), data = arima_residuals_step1, 
+    cond.dist = "norm", trace = FALSE) 
+
+Mean and Variance Equation:
+ data ~ garch(1, 1)
+<environment: 0x000001b280667048>
+ [data = arima_residuals_step1]
+
+Conditional Distribution:
+ norm 
+
+Coefficient(s):
+      mu     omega    alpha1     beta1  
+-0.18917   3.31165   0.39791   0.58988  
+
+Std. Errors:
+ based on Hessian 
+
+Error Analysis:
+        Estimate  Std. Error  t value Pr(>|t|)    
+mu      -0.18917     0.04494   -4.209 2.57e-05 ***
+omega    3.31165     0.20360   16.266  < 2e-16 ***
+alpha1   0.39791     0.02775   14.338  < 2e-16 ***
+beta1    0.58988     0.01891   31.192  < 2e-16 ***
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+Log Likelihood:
+ -22105.26    normalized:  -2.827483 
+
+Description:
+ Thu Oct 16 17:26:48 2025 by user: JJ 
+
+
+Standardised Residuals Tests:
+                                   Statistic      p-Value
+ Jarque-Bera Test   R    Chi^2  1.133057e+06 0.000000e+00
+ Shapiro-Wilk Test  R    W                NA           NA
+ Ljung-Box Test     R    Q(10)  9.056989e+01 4.107825e-15
+ Ljung-Box Test     R    Q(15)  1.283982e+02 0.000000e+00
+ Ljung-Box Test     R    Q(20)  1.303476e+02 0.000000e+00
+ Ljung-Box Test     R^2  Q(10)  1.529877e+00 9.988392e-01
+ Ljung-Box Test     R^2  Q(15)  2.651657e+00 9.998147e-01
+ Ljung-Box Test     R^2  Q(20)  2.894385e+00 9.999970e-01
+ LM Arch Test       R    TR^2   1.977527e+00 9.994395e-01
+
+Information Criterion Statistics:
+     AIC      BIC      SIC     HQIC 
+5.655989 5.659552 5.655988 5.657210 
+
+
+Title:
+ GARCH Modelling 
+
+Call:
+ garchFit(formula = ~garch(1, 1), data = arima_residuals_step1, 
+    cond.dist = "norm", trace = FALSE) 
+
+Mean and Variance Equation:
+ data ~ garch(1, 1)
+<environment: 0x000001b280667048>
+ [data = arima_residuals_step1]
+
+Conditional Distribution:
+ norm 
+
+Coefficient(s):
+      mu     omega    alpha1     beta1  
+-0.18917   3.31165   0.39791   0.58988  
+
+Std. Errors:
+ based on Hessian 
+
+Error Analysis:
+        Estimate  Std. Error  t value Pr(>|t|)    
+mu      -0.18917     0.04494   -4.209 2.57e-05 ***
+omega    3.31165     0.20360   16.266  < 2e-16 ***
+alpha1   0.39791     0.02775   14.338  < 2e-16 ***
+beta1    0.58988     0.01891   31.192  < 2e-16 ***
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+Log Likelihood:
+ -22105.26    normalized:  -2.827483 
+
+Description:
+ Thu Oct 16 17:26:48 2025 by user: JJ 
+
+
+Standardised Residuals Tests:
+                                   Statistic      p-Value
+ Jarque-Bera Test   R    Chi^2  1.133057e+06 0.000000e+00
+ Shapiro-Wilk Test  R    W                NA           NA
+ Ljung-Box Test     R    Q(10)  9.056989e+01 4.107825e-15
+ Ljung-Box Test     R    Q(15)  1.283982e+02 0.000000e+00
+ Ljung-Box Test     R    Q(20)  1.303476e+02 0.000000e+00
+ Ljung-Box Test     R^2  Q(10)  1.529877e+00 9.988392e-01
+ Ljung-Box Test     R^2  Q(15)  2.651657e+00 9.998147e-01
+ Ljung-Box Test     R^2  Q(20)  2.894385e+00 9.999970e-01
+ LM Arch Test       R    TR^2   1.977527e+00 9.994395e-01
+
+Information Criterion Statistics:
+     AIC      BIC      SIC     HQIC 
+5.655989 5.659552 5.655988 5.657210 
+
+
+Part 3(f): Model comparison and conclusion
+Model comparison summary prepared - see individual model outputs above
+Recommendation based on diagnostics and model fit statistics
+
+=== SAVING RESULTS ===
+Results saved to ../practical1_actual_results.rds
+
+=== PRACTICAL 1 ANALYSIS COMPLETE ===
+All parts completed according to actual assignment requirements
+Figures saved to: ../figures 
+Warning message:
+Using `size` aesthetic for lines was deprecated in ggplot2 3.4.0.
+Γä╣ Please use `linewidth` instead. 
