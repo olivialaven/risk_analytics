@@ -359,21 +359,25 @@ cat("Discharge (95th percentile):", round(discharge_threshold, 2), "m³/s\n")
 
 # Univariate extremograms
 tryCatch({
-  # Precipitation extremogram
-  precip_extremogram <- extremogram1(df$precip, quant = 0.95, maxlag = 10)
+  # Precipitation extremogram (type=1: upper tail extremes)
+  precip_extremogram <- extremogram1(df$precip, quant = 0.95, maxlag = 10, type = 1, ploting = 0)
   
   # Discharge extremogram  
-  discharge_extremogram <- extremogram1(df$discharge, quant = 0.95, maxlag = 10)
+  discharge_extremogram <- extremogram1(df$discharge, quant = 0.95, maxlag = 10, type = 1, ploting = 0)
   
-  # Cross-extremogram
-  cross_extremogram <- extremogram2(df$precip, df$discharge, quant1 = 0.95, quant2 = 0.95, maxlag = 10)
+  # Cross-extremogram (requires matrix input with both series)
+  data_matrix <- cbind(df$precip, df$discharge)
+  cross_extremogram <- extremogram2(data_matrix, quant1 = 0.95, quant2 = 0.95, maxlag = 10, type = 1, ploting = 0)
+  
+  # Use consistent length for all series (cross-extremogram may return fewer values)
+  lag_length <- min(length(precip_extremogram), length(discharge_extremogram), length(cross_extremogram))
   
   # Create extremogram plots
   extrem_data <- data.frame(
-    lag = 0:10,
-    precip_auto = precip_extremogram,
-    discharge_auto = discharge_extremogram,
-    cross = cross_extremogram
+    lag = 0:(lag_length-1),
+    precip_auto = precip_extremogram[1:lag_length],
+    discharge_auto = discharge_extremogram[1:lag_length],
+    cross = cross_extremogram[1:lag_length]
   )
   
   extrem_long <- extrem_data %>%
@@ -381,20 +385,25 @@ tryCatch({
                 names_to = "type", values_to = "extremogram")
   
   p2c_extremogram <- ggplot(extrem_long, aes(x = lag, y = extremogram, color = type)) +
-    geom_line() +
-    geom_point() +
-    geom_hline(yintercept = 0.05, linetype = 'dashed', alpha = 0.5) +
+    geom_hline(yintercept = 0.05, linetype = 'dashed', color = 'gray50', alpha = 0.5) +
+    geom_line(linewidth = 1) +
+    geom_point(size = 3) +
     labs(title = 'Extremograms: Temporal Dependence of Extreme Events',
+         subtitle = 'P(X_t+k > threshold | X_t > threshold)',
          x = 'Lag (days)', y = 'Extremogram',
          color = 'Type') +
-    scale_color_discrete(labels = c("Cross (Precip→Discharge)", "Discharge Auto", "Precipitation Auto")) +
-    theme_minimal()
+    scale_color_manual(
+      values = c("precip_auto" = "#E69F00", "discharge_auto" = "#56B4E9", "cross" = "#009E73"),
+      labels = c("Cross (Precip→Discharge)", "Discharge Auto", "Precipitation Auto")
+    ) +
+    theme_minimal() +
+    theme(legend.position = "top")
   
   ggsave(file.path(fig_dir, 'part2c_extremograms.png'), p2c_extremogram, width = 10, height = 6)
   
   # Determine which shows stronger clustering
-  precip_clustering <- sum(precip_extremogram[2:11] > 0.05)  # Exclude lag 0
-  discharge_clustering <- sum(discharge_extremogram[2:11] > 0.05)
+  precip_clustering <- sum(precip_extremogram[2:lag_length] > 0.05, na.rm = TRUE)  # Exclude lag 0
+  discharge_clustering <- sum(discharge_extremogram[2:lag_length] > 0.05, na.rm = TRUE)
   
   cat("Extreme clustering strength:\n")
   cat("Precipitation: ", precip_clustering, "lags above 0.05 threshold\n")
