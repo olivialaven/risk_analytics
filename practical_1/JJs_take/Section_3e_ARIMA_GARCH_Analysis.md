@@ -92,10 +92,10 @@ where:
 | Kurtosis | 7.1 | — | Heavy tails |
 
 **Interpretation:**
-- The GARCH model removes remaining autocorrelation and ARCH effects from the ARIMA residuals.
-- Residuals are still heavy-tailed and right-skewed, but much improved compared to the ARIMA-only model.
 
----
+**Contextual comment:**
+The residuals from the ARIMA+GARCH model show no significant autocorrelation and no remaining ARCH effects, indicating that the model successfully captures both the mean and volatility dynamics of the discharge series. However, the residuals remain moderately right-skewed and heavy-tailed (kurtosis > 7), reflecting the persistent risk of extreme discharge events. This means that, while the two-step model is a substantial improvement for operational forecasting and risk management, rare but severe floods are still more likely than a normal model would predict. For critical infrastructure or insurance applications, further attention to tail risk (e.g., using extreme value theory) may be warranted.
+
 
 ## Model Comparison Table
 
