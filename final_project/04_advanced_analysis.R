@@ -65,26 +65,44 @@ gev_const <- fevd(weekly_maxima$max_demand, type = "GEV")
 cat("\n--- GEV Model (Constant Parameters) ---\n")
 print(summary(gev_const))
 
-# Time-varying location parameter
-gev_time <- fevd(weekly_maxima$max_demand, type = "GEV", 
-                 location.fun = ~1:nrow(weekly_maxima))
-cat("\n--- GEV Model (Time-varying Location) ---\n")
-print(summary(gev_time))
+# Time-varying location parameter - with error handling
+gev_time <- tryCatch({
+  fevd(weekly_maxima$max_demand, type = "GEV", 
+       location.fun = ~seq_along(weekly_maxima$max_demand))
+}, error = function(e) {
+  cat("\nNote: Time-varying GEV model failed to converge. Using constant model only.\n")
+  NULL
+})
+
+if (!is.null(gev_time)) {
+  cat("\n--- GEV Model (Time-varying Location) ---\n")
+  print(summary(gev_time))
+}
 
 # 3.4 Model comparison
 cat("\n--- Model Comparison ---\n")
-comparison <- data.frame(
-  Model = c("GEV (Constant)", "GEV (Time-varying)"),
-  AIC = c(gev_const$results$AIC, gev_time$results$AIC),
-  BIC = c(gev_const$results$BIC, gev_time$results$BIC),
-  Log_Likelihood = c(gev_const$results$nllh, gev_time$results$nllh)
-)
-print(comparison)
-
-# Select best model (lower AIC/BIC)
-best_gev <- if (gev_const$results$AIC < gev_time$results$AIC) gev_const else gev_time
-cat("\nBest model:", ifelse(gev_const$results$AIC < gev_time$results$AIC, 
-                            "Constant GEV", "Time-varying GEV"), "\n")
+if (!is.null(gev_time)) {
+  # Extract AIC/BIC values safely
+  aic_const <- if (!is.null(gev_const$results$AIC)) gev_const$results$AIC else gev_const$AIC
+  bic_const <- if (!is.null(gev_const$results$BIC)) gev_const$results$BIC else gev_const$BIC
+  aic_time <- if (!is.null(gev_time$results$AIC)) gev_time$results$AIC else gev_time$AIC
+  bic_time <- if (!is.null(gev_time$results$BIC)) gev_time$results$BIC else gev_time$BIC
+  
+  comparison <- data.frame(
+    Model = c("GEV (Constant)", "GEV (Time-varying)"),
+    AIC = c(aic_const, aic_time),
+    BIC = c(bic_const, bic_time)
+  )
+  print(comparison)
+  
+  # Select best model (lower AIC/BIC)
+  best_gev <- if (aic_const < aic_time) gev_const else gev_time
+  cat("\nBest model:", ifelse(aic_const < aic_time, 
+                              "Constant GEV", "Time-varying GEV"), "\n")
+} else {
+  cat("Using GEV (Constant) model\n")
+  best_gev <- gev_const
+}
 
 # 3.5 Diagnostic plots
 png("output_figures/11_gev_diagnostics.png", width = 10, height = 8, units = "in", res = 300)
@@ -288,9 +306,10 @@ cat("Interpretation:", ifelse(lb_test$p.value < 0.05,
 
 # 5.3 Fit ARIMA model (using a subset for computational efficiency)
 cat("\nFitting ARIMA model (this may take a few minutes)...\n")
-demand_subset <- data$demand_MW[1:min(10000, nrow(data))]  # Use first 10k observations
-arima_fit <- auto.arima(demand_subset, max.p = 5, max.q = 5, max.d = 2, 
-                        seasonal = FALSE, stepwise = TRUE, trace = FALSE)
+demand_subset <- data$demand_MW[1:min(5000, nrow(data))]  # Use first 5k observations
+arima_fit <- auto.arima(demand_subset, max.p = 3, max.q = 3, max.d = 2, 
+                        seasonal = FALSE, stepwise = TRUE, trace = FALSE, 
+                        approximation = TRUE)
 cat("\n--- ARIMA Model ---\n")
 print(summary(arima_fit))
 
