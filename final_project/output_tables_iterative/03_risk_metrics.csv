@@ -1,0 +1,5 @@
+"Metric","Value_MW","Interpretation"
+"VaR(95%)",19398,"Routine high demand threshold"
+"VaR(99%)",21174,"Extreme demand threshold"
+"ES(99%)",22019,"Average demand when above 99th percentile"
+"10-Year Return Level",25682,"Expected maximum in 10-year period"
