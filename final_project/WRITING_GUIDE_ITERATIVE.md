@@ -192,6 +192,30 @@ Return Period | GEV (MW)  | GPD (MW)  | Difference
 
 ---
 
+## Appendix selections (unlimited space)
+
+When space is tight, keep the body to 2 figures and 2 tables, and move the rest to the appendix. Recommended mapping:
+
+- Main text figures:
+    1) `02_demand_vs_temperature.png` (U-shape) → Figure 1
+    2) `05_gpd_diagnostics.png` (primary model validation) → Figure 2
+
+- Appendix figures (label as A1, A2, …):
+    - A1: `01_timeseries_exploration.png` (context + seasonality)
+    - A2: `03_distribution_diagnostics.png` (histogram + QQ against normal)
+    - A3: `04_gev_diagnostics.png` (GEV diagnostics for completeness)
+
+- Main text tables:
+    - Table 1: `02_return_level_comparison.csv` (GEV vs GPD)
+    - Table 2: `03_risk_metrics.csv` (VaR/ES + 10-year level)
+
+- Appendix tables:
+    - A1: `01_summary_statistics.csv` (descriptive stats)
+
+Note on layout: In LaTeX (11pt), use \includegraphics[width=0.66\textwidth] for Figure 1 and \includegraphics[width=0.75\textwidth] for Figure 2 (four-panel diagnostic). Keep captions concise (≤2 lines). This layout reliably fits in ≤3 pages with 0.9–1.0 inch margins and 1.03–1.07 line spacing.
+
+---
+
 ## Tables to Include
 
 **Must Include:**
