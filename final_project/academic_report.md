@@ -1,8 +1,5 @@
 # Extreme Demand Risk in the Midwest Power System: An Iterative EVT Assessment
 
-Author: [Your Name]
-Date: 28 October 2025
-
 ## 1. Introduction and Data
 Ensuring sufficient generation capacity during extreme demand events is a central planning problem. We analyze 5.2 years (43,361 hourly observations, 2012–2017) of American Electric Power (AEP) system demand merged with a Midwest temperature proxy (average of Chicago, Detroit, Indianapolis, Pittsburgh). Because the record is short for tail inference, we adopt a discovery-driven approach: each result motivates the next methodological choice and validation step.
 

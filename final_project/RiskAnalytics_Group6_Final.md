@@ -1,15 +1,5 @@
 # Risk Analytics
 
-# Extreme Value Analysis of Egg Sales
-
-![](images/4b7215c967f4ec6b24c855fa470f211c0d2236afaf5b796cd9448a5051514ccf.jpg)
-
-December 16th 2024
-
-Tim Bättig (374333) - Giammarco Bozzelli (376379) - Balthazar Duc (369223) - Jakob Theo Andreas Frühauf (369224) - Alex Pinel (310388)
-
-Group 6
-
 # Contents
 
 # 1 Practical 1
@@ -18,20 +8,8 @@ Group 6
 1.2 Part 2: Financial Time Series, Heteroscedasticity and the Random Walk Hypothesis 2  
 1.3 Part 3: Dependence Between Time Series 3
 
-# 2 Practical 2 4
+# 2 Practical 2
 
-2.1 Part 1: Block Maxima Approach 4  
-2.2 Part 2: Peaks-Over-Threshold (POT) Approach 5  
-2.3 Part 3: Clustering and Seasonal Variations 6
-
-# 3 Practical 3 7
-
-3.1 Data 7  
-3.2 Extreme Value Analysis 8
-
-3.2.1 Block Maxima Approach 8  
-3.2.2 POT Approach 9  
-3.2.3 Clustering and Holidays 10
 
 # 1 Practical 1
 
