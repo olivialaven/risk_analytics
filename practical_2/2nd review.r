@@ -1,4 +1,4 @@
-df <- read.csv("River_and_precip_Neuchatel.csv")
+df <- read.csv("../practical_1/River_and_precip_Neuchatel.csv")
 str(df)
 head(df)
 
@@ -7,12 +7,20 @@ str(df$Date)
 
 # PART 1 OF THE ASSIGNMENT ----------------------------------------
 
+# Set CRAN mirror
+options(repos = c(CRAN = "https://cran.r-project.org"))
+
 # Extract the year from each date
-install.packages("lubridate")
+if (!require("lubridate", quietly = TRUE)) {
+  install.packages("lubridate")
+}
 library(lubridate)
 df$year <- year(df$Date)
 
 # Computing Yearly maximum
+if (!require("dplyr", quietly = TRUE)) {
+  install.packages("dplyr")
+}
 library(dplyr)
 yearly_max <- df %>%
   group_by(year) %>%
@@ -22,7 +30,9 @@ yearly_max <- df %>%
 head(yearly_max)
 
 # Plotting the yearly maximum discharge
-install.packages("ggplot2")
+if (!require("ggplot2", quietly = TRUE)) {
+  install.packages("ggplot2")
+}
 library(ggplot2)
 ggplot(yearly_max, aes(x = year, y = max_discharge)) +
   geom_line() +
@@ -182,6 +192,9 @@ ggplot(df, aes(x = Date, y = RiverDischarge)) +
 ggsave("daily_river_discharge_timeseries.png")
 
 # Question 2.b: 
+if (!require("POT", quietly = TRUE)) {
+  install.packages("POT")
+}
 library(POT)
 
 mrlplot(df$RiverDischarge, main = "Mean Residual Life Plot")
@@ -207,6 +220,9 @@ ggplot(df, aes(x = Date, y = RiverDischarge)) +
 ggsave("river_discharge_threshold_exceedances_v2.png")
 
 # Question 2.c: Fitting a GPD to the exceedances over the chosen threshold and drawing diagnostic plots
+if (!require("ismev", quietly = TRUE)) {
+  install.packages("ismev")
+}
 library(ismev)
 u <- 40
 gpd_mod <- gpd.fit(df$RiverDischarge, u)
