@@ -21,7 +21,7 @@
 pkgs <- c(
   "dplyr", "lubridate", "readr", "ggplot2",
   "extRemes", "POT", "scales",
-  "moments", "nortest", "fitdistrplus"
+  "moments", "nortest", "fitdistrplus", "tsibble"
 )
 
 for (p in pkgs) {
@@ -41,21 +41,27 @@ comed_file <- file.path(data_dir, "COMED_hourly.csv")
 # 1. Load & Clean Data --------
 ###############################
 
-comed <- read_csv(comed_file)
+data <- read_csv(comed_file) %>%
+  arrange(Datetime)
 
-str(comed)
-head(comed)
+str(data)
+head(data)
+
+# Handle duplicates
+dup_rows <- data %>%
+  group_by(Datetime) %>%
+  filter(n() > 1)
+
+dup_rows
+
+# Average duplicates loads due to differing values
+data_clean <- data %>%
+  group_by(Datetime) %>%
+  summarise(COMED_MW = mean(COMED_MW), .groups = "drop")
 
 # Datetime is already POSIXct from readr; just copy to a consistent name
-comed <- comed %>%
+comed <- data_clean %>%
   mutate(datetime = Datetime)
-
-# Check for parsing issues
-bad_rows <- comed %>% filter(is.na(datetime))
-nrow(bad_rows)          # should be 0
-if (nrow(bad_rows) > 0) {
-  print(head(bad_rows$Datetime))
-}
 
 ###############################
 # 2. Daily Aggregation --------
