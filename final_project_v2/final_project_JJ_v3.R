@@ -8,7 +8,7 @@
 #   2. Aggregate to Daily Level
 #   3. Exploratory Data Analysis (EDA)
 #   4. Dependence / IID Checks
-#   5. Optional ARIMA residual approach (full year, robustness)
+#   5. ARIMA residual approach (full year, robustness)
 #   6. Block Maxima (GEV) – Summer only
 #   7. Peaks-Over-Threshold (POT) – Summer only
 #   8. Extra Risk Metrics (exceedance probabilities)
@@ -130,7 +130,7 @@ hist(x_full, breaks = 40, col = "skyblue", prob = TRUE,
 lines(density(x_full), lwd = 2)
 
 qqnorm(x_full, main = "QQ-plot vs Normal – Full-Year Daily Max")
-qqline(x_full, col = "red", lwd = 2)
+qqline(x_full, col = "#ce2e24", lwd = 2)
 par(mfrow = c(1, 1))
 
 # Skewness, kurtosis, normality (full-year)
@@ -161,12 +161,15 @@ hist(x_full, breaks = 50, prob = TRUE, col = "lightblue",
      xlab = "Daily max load (MW)")
 lines(xseq_full, dnorm(xseq_full,
                        mean = fit_norm_full$estimate["mean"],
-                       sd   = fit_norm_full$estimate["sd"]))
+                       sd   = fit_norm_full$estimate["sd"]),
+                       col = "#ce2e24")
 lines(xseq_full, dlnorm(xseq_full,
                         meanlog = fit_lnorm_full$estimate["meanlog"],
-                        sdlog   = fit_lnorm_full$estimate["sdlog"]))
+                        sdlog   = fit_lnorm_full$estimate["sdlog"]),
+                        col = "#205cbc")
 legend("topright", legend = c("Normal", "Lognormal"),
-       lwd = 2, lty = 1)
+       lwd = 2, lty = 1,
+       col = c("#ce2e24", "#205cbc"))
 
 ### 3.2 Summer-only EDA -----------------------------------
 
@@ -245,7 +248,7 @@ acf(data_summer$daily_max_load,
     main = "ACF of Summer Daily Max Load")
 
 ###############################
-# 5. Optional ARIMA residual approach (full year)
+# 5. Check: ARIMA residual approach (full year)
 ###############################
 
 # Robustness check: ARIMA model on full-year daily maxima,
@@ -278,7 +281,7 @@ if (run_arima) {
       main = "ACF of ARIMA residuals")
   qqnorm(resid_arima,
          main = "QQ-plot of ARIMA residuals")
-  qqline(resid_arima, col = "red")
+  qqline(resid_arima, col = "#ce2e24")
   hist(resid_arima, breaks = 40, col = "lightblue",
        main = "Histogram of ARIMA residuals",
        xlab = "Residuals")
@@ -378,8 +381,10 @@ gev_rl
 ###############################
 
 # POT on summer daily maxima, with declustering.
+# Here we (i) choose a main threshold + cluster size for the report,
+# and (ii) run a robustness grid over thresholds and run lengths.
 
-# 7.1 MRL plot + quantiles for threshold choice
+# 7.1 MRL plot + quantiles for threshold choice (summer only)
 POT::mrlplot(data_summer$daily_max_load,
              main = "Mean Residual Life – Summer Daily Max Load")
 
@@ -387,40 +392,152 @@ quantile(data_summer$daily_max_load,
          probs = c(0.90, 0.95, 0.975),
          na.rm = TRUE)
 
-# Choose threshold at 95% quantile
-u <- quantile(data_summer$daily_max_load, 0.95, na.rm = TRUE)
+########################################
+# 7.2 Robustness grid over thresholds &
+#     cluster run lengths (declustered)
+########################################
+
+# We explore several thresholds (quantiles of summer daily maxima)
+# and several run lengths (tim.cond in days) for declustering.
+# For each combination, we:
+#  - decluster exceedances,
+#  - fit a GPD to cluster excesses,
+#  - compute number of clusters, cluster rate,
+#  - estimate finite endpoint (if xi < 0),
+#  - compute 5-, 10-, 20-summer return levels.
+
+prob_grid      <- c(0.90, 0.92, 0.94, 0.95, 0.96, 0.975)
+tim_cond_grid  <- c(1, 2, 3)  # 1–3 day run lengths for clustering
+n_years_summer <- length(unique(lubridate::year(data_summer$date)))
+
+run_pot_declust <- function(u, tim_cond, data_vec, n_years, T_vec = c(5, 10, 20)) {
+  # If too few exceedances, skip
+  if (sum(data_vec > u, na.rm = TRUE) < 5) return(NULL)
+  
+  declust_data <- data.frame(
+    obs  = data_vec,
+    time = seq_along(data_vec)
+  )
+  
+  dcl <- POT::clust(
+    declust_data,
+    u        = as.numeric(u),
+    tim.cond = tim_cond
+  )
+  
+  cluster_max <- sapply(dcl, function(mat) max(mat["obs", ]))
+  n_clusters  <- length(cluster_max)
+  if (n_clusters < 5) return(NULL)
+  
+  excesses <- cluster_max - u
+  df_excess <- data.frame(y = excesses)
+  
+  gpd_fit <- extRemes::fevd(
+    y ~ 1,
+    data      = df_excess,
+    type      = "GP",
+    threshold = 0
+  )
+  
+  beta <- gpd_fit$results$par["scale"]
+  xi   <- gpd_fit$results$par["shape"]
+  
+  endpoint <- if (xi < 0) as.numeric(u) - beta / xi else NA
+  lambda   <- n_clusters / n_years
+  
+  gpd_RL <- function(T_years, beta, xi, lambda) {
+    (beta / xi) * ((lambda * T_years)^xi - 1)
+  }
+  
+  RL_excess <- sapply(T_vec, gpd_RL,
+                      beta = beta, xi = xi, lambda = lambda)
+  RL <- as.numeric(u) + RL_excess
+  names(RL) <- paste0("RL_", T_vec, "y")
+  
+  out <- data.frame(
+    prob_u     = NA_real_,  # will be filled outside
+    u          = as.numeric(u),
+    tim_cond   = tim_cond,
+    n_clusters = n_clusters,
+    lambda     = lambda,
+    beta       = beta,
+    xi         = xi,
+    endpoint   = endpoint,
+    t(RL)
+  )
+  out
+}
+
+pot_grid_list <- list()
+
+for (p in prob_grid) {
+  u_p <- as.numeric(quantile(data_summer$daily_max_load, p, na.rm = TRUE))
+  for (tc in tim_cond_grid) {
+    res <- try(
+      run_pot_declust(u = u_p,
+                      tim_cond = tc,
+                      data_vec = data_summer$daily_max_load,
+                      n_years  = n_years_summer),
+      silent = TRUE
+    )
+    if (!inherits(res, "try-error") && !is.null(res)) {
+      res$prob_u <- p
+      pot_grid_list[[length(pot_grid_list) + 1]] <- res
+    }
+  }
+}
+
+pot_grid_results <- if (length(pot_grid_list) > 0) {
+  do.call(rbind, pot_grid_list)
+} else {
+  NULL
+}
+
+# Inspect this in the console (and/or export) to see how sensitive
+# cluster counts, endpoints, and return levels are to threshold & tim.cond.
+print(pot_grid_results)
+
+##################################################
+# 7.3 Main modelling choice for the report:
+#     u = 95% quantile, run length from extremal
+#     index (≈ 2 days)
+##################################################
+
+# Choose threshold at 95% quantile (summer daily maxima)
+u <- as.numeric(quantile(data_summer$daily_max_load, 0.95, na.rm = TRUE))
 u
 
-# 7.2 Extremal index via evd::exi
+# Extremal index via evd::exi at this u
 theta_hat <- evd::exi(data_summer$daily_max_load, u = u)
 theta_hat
 
 cluster_size_mean <- 1 / theta_hat
-cluster_size_mean   # should be ~2
+cluster_size_mean   # ~1.9 days
 
-# 7.3 Declustering summer data
-declust_data <- data.frame(
+# Use run length ≈ mean cluster size (rounded)
+tim_cond_main <- round(cluster_size_mean)
+
+# 7.4 Declustering summer data at main choice (for report)
+declust_data_main <- data.frame(
   obs  = data_summer$daily_max_load,
   time = 1:nrow(data_summer)
 )
 
-tim_cond <- round(cluster_size_mean)
-
-declust <- POT::clust(
-  declust_data,
+declust_main <- POT::clust(
+  declust_data_main,
   u        = as.numeric(u),
-  tim.cond = tim_cond
+  tim.cond = tim_cond_main
 )
 
-# 7.4 Cluster maxima and excesses
-cluster_max <- sapply(declust, function(mat) max(mat["obs", ]))
+# Cluster maxima and excesses for main choice
+cluster_max <- sapply(declust_main, function(mat) max(mat["obs", ]))
 summary(cluster_max)
-length(cluster_max)   # number of clusters
+length(cluster_max)   # number of clusters at main choice
 
 excesses <- cluster_max - as.numeric(u)
 df_excess <- data.frame(y = excesses)
 
-# 7.5 GPD fit to declustered excesses
+# 7.5 GPD fit to declustered excesses (main choice)
 gpd_declust <- extRemes::fevd(
   y ~ 1,
   data      = df_excess,
@@ -436,13 +553,13 @@ xi_hat   <- gpd_declust$results$par["shape"]
 x_endpoint <- as.numeric(u) - beta_hat / xi_hat
 x_endpoint
 
-# 7.6 Exceedance rate (per summer)
+# 7.6 Exceedance rate (per summer) at main choice
 n_clusters <- length(cluster_max)
 n_years    <- length(unique(lubridate::year(data_summer$date)))
 lambda_hat <- n_clusters / n_years
 lambda_hat
 
-# 7.7 GPD-based return levels ("per summer year")
+# 7.7 GPD-based return levels ("per summer year") at main choice
 gpd_RL <- function(T_years, beta, xi, lambda) {
   (beta / xi) * ((lambda * T_years)^xi - 1)
 }
@@ -457,8 +574,8 @@ actual_RL <- as.numeric(u) + excess_RL
 names(actual_RL) <- paste0(T_vec, "-year")
 actual_RL
 
-# 7.8 Summer series with threshold & cluster maxima
-cluster_indices <- sapply(declust, function(mat) max(mat["time", ]))
+# 7.8 Summer series with threshold & cluster maxima (main choice)
+cluster_indices <- sapply(declust_main, function(mat) max(mat["time", ]))
 cluster_dates   <- data_summer$date[cluster_indices]
 
 cluster_df <- data.frame(
@@ -469,18 +586,22 @@ cluster_df <- data.frame(
 ggplot(data_summer, aes(date, daily_max_load)) +
   geom_line(alpha = 0.4) +
   geom_hline(yintercept = u, linetype = "dashed",
-             color = "darkgreen") +
+             color = "#205cbc") +
   geom_point(data = cluster_df,
              aes(x = date, y = daily_max_load),
-             color = "red", size = 2) +
+             color = "#ce2e24", size = 2) +
   labs(
     title = "Summer Daily Max Demand – Threshold Exceedances & Cluster Maxima",
     x = "Date", y = "Daily max load (MW)"
   )
 
+###########################################################
 # 7.9 Threshold-sensitivity of xi (summer, no declustering)
+#     (kept as a separate diagnostic: GPD fit to raw excesses)
+###########################################################
+
 u_grid <- quantile(data_summer$daily_max_load,
-                   probs = c(0.90, 0.95, 0.975),
+                   probs = c(0.90, 0.92, 0.94, 0.95, 0.96, 0.975),
                    na.rm = TRUE)
 xi_grid <- numeric(length(u_grid))
 
@@ -577,7 +698,7 @@ hist(x, breaks = 40, col = "skyblue", prob = TRUE,
      xlab = "Daily max load (MW)")
 lines(density(x), lwd = 2)
 qqnorm(x, main = "QQ-plot vs Normal – Full-Year Daily Max")
-qqline(x, col = "red", lwd = 2)
+qqline(x, col = "#ce2e24", lwd = 2)
 par(mfrow = c(1, 1))
 dev.off()
 
@@ -591,7 +712,7 @@ hist(x, breaks = 40, col = "skyblue", prob = TRUE,
      xlab = "Daily max load (MW)")
 lines(density(x), lwd = 2)
 qqnorm(x, main = "QQ-plot vs Normal – Summer Daily Max")
-qqline(x, col = "red", lwd = 2)
+qqline(x, col = "#ce2e24", lwd = 2)
 par(mfrow = c(1, 1))
 dev.off()
 
@@ -610,7 +731,8 @@ lines(xseq, dlnorm(xseq,
                    meanlog = fit_lnorm_full$estimate["meanlog"],
                    sdlog   = fit_lnorm_full$estimate["sdlog"]))
 legend("topright", legend = c("Normal", "Lognormal"),
-       lwd = 2, lty = 1)
+       lwd = 2, lty = 1,
+       col = c("#ce2e24", "#205cbc"))
 dev.off()
 
 ## 9.6 Summer daily max with fitted densities
@@ -628,7 +750,8 @@ lines(xseq, dlnorm(xseq,
                    meanlog = fit_lnorm_summer$estimate["meanlog"],
                    sdlog   = fit_lnorm_summer$estimate["sdlog"]))
 legend("topright", legend = c("Normal", "Lognormal"),
-       lwd = 2, lty = 1)
+       lwd = 2, lty = 1,
+       col = c("#ce2e24", "#205cbc"))
 dev.off()
 
 ## 9.7 ACF of daily max load (full year)
@@ -673,10 +796,10 @@ png(file.path(fig_dir, "P3_daily_max_demand_POT_threshold_exceedance_cluster_max
 ggplot(data_summer, aes(date, daily_max_load)) +
   geom_line(alpha = 0.4) +
   geom_hline(yintercept = u, linetype = "dashed",
-             color = "darkgreen") +
+             color = "#205cbc") +
   geom_point(data = cluster_df,
              aes(x = date, y = daily_max_load),
-             color = "red", size = 2) +
+             color = "#ce2e24", size = 2) +
   labs(
     title = "Summer Daily Max Demand – Threshold Exceedances & Cluster Maxima",
     x = "Date", y = "Daily max load (MW)"
@@ -730,7 +853,7 @@ if (run_arima && !is.null(resid_arima)) {
       main = "ACF of ARIMA residuals")
   qqnorm(resid_arima,
          main = "QQ-plot of ARIMA residuals")
-  qqline(resid_arima, col = "red")
+  qqline(resid_arima, col = "#ce2e24")
   hist(resid_arima, breaks = 40, col = "lightblue",
        main = "Histogram of ARIMA residuals",
        xlab = "Residuals")
