@@ -1,15 +1,29 @@
 
 # Risk Analytics - Practical 1
-#install.packages("tidyverse")
-library(tidyverse)   # for data manipulation and plotting
-library(lubridate)   # for date handling
 
-#install.packages("moments")
+############### PACKAGES ###############
+library(tidyverse)   
+library(lubridate)   
 library(moments)
+library(fGarch)
+library(forecast)
+library(ggplot2)
+library(DescTools)
+library(fitdistrplus)  
+library(nortest)       
+library(MASS)          
+library(cowplot)   
+library(extremogram)
+library(dplyr)
+library(tidyr)
+library(lmtest)
+library(fpp2)
+library(ggfortify)
+library(tseries)
 
-# Part 0 ----
+# PART 0 ----
 
-#(a) Upload data----
+############### 0 - (a) Upload data ###############
 
 # Loading the data set
 data <- read.csv("~/Desktop/MA3/Risk Analytics/Session 1/River_and_precip_Neuchatel.csv")
@@ -24,32 +38,26 @@ summary(data) # summary table
 data$Date <- as.Date(data$Date, format="%Y-%m-%d")
 str(data) # checking that the conversion is successful
 
-#(b) Visual inspection----
+
+############### 0 - (b) Visual inspection ###############
 
 # Discharge Plot:
 plot(data$Date, data$RiverDischarge, type="l", 
      xlab="Date", ylab="Discharge (m3/s)",
-     main="Daily River Discharge", col="blue")
+     main="Daily River Discharge", col="#205cbc")
 
 # Precipitation Plot:
 plot(data$Date, data$Precipitation, type="l", 
      xlab="Date", ylab="Precipitation (mm)",
-     main="Daily Precipitation", col="darkgreen")
+     main="Daily Precipitation", col="#ce2e24")
 
 # Count missing values:
-colSums(is.na(data))
+colSums(is.na(data)) # no missing values
 
-# Part 1 ----
 
-#(a) Visual assessment of distribution----
+# PART 1 ----
 
-# Downloading packages
-#install.packages(c("fitdistrplus","nortest","MASS","ggplot2","cowplot"))  
-library(fitdistrplus)  # for fitting distributions and diagnostic plots
-library(nortest)       # for Anderson-Darling test (ad.test)
-library(MASS)          # fitdistr (alternative)
-library(ggplot2)       # nicer plotting
-library(cowplot)       # combining ggplots (optional)
+############### 1 - (a) Visual assessment of distribution ###############
 
 # Histogram (with density) and QQ-plot (normal)
 par(mfrow=c(1,2))
@@ -57,7 +65,7 @@ par(mfrow=c(1,2))
 # Histogram and QQ-plot for River Discharge
 hist(data$RiverDischarge,
      breaks = 40,
-     col = "skyblue",
+     col = "#E6E6E6",
      main = "Histogram of River Discharge",
      xlab = "Discharge (m³/s)",
      prob=TRUE)
@@ -65,177 +73,192 @@ lines(density(data$RiverDischarge), lwd=2)
 
 qqnorm(data$RiverDischarge,
        main = "QQ-plot of River Discharge")
-qqline(data$RiverDischarge, col = "red", lwd=2)
+qqline(data$RiverDischarge, col = "#205cbc", lwd=2)
 
 par(mfrow=c(1,1))
 
 # Calculate skewness and kurtosis
 skewness_val <- moments::skewness(data$RiverDischarge)
 kurtosis_val <- moments::kurtosis(data$RiverDischarge)
-cat("Skewness:", round(skewness_val, 3), "\n")
-cat("Kurtosis:", round(kurtosis_val, 3), "\n")
+cat("Skewness:", round(skewness_val, 1), "\n")
+cat("Kurtosis:", round(kurtosis_val, 1), "\n")
 
-# (b) Formal assessment of distribution----
-# Install if needed
-#install.packages("nortest")
-library(nortest)
-library(fitdistrplus)
+
+############### 1 - (b) Formal assessment of distribution ###############
 
 # Anderson-Darling test on raw discharge
 ad.test(data$RiverDischarge)
 
-# AD test on log-transformed discharge (common hydrology practice)
-#ad_log <- nortest::ad.test(log(df$RiverDischarge))
-#ad_log
 
-# (c) Fit a distribution----
+############### 1 - (c) Fit a distribution ###############
 
-# Fit distributions using fitdist (requires positive values for lnorm/gamma)
+# Fit distributions using fitdist
 fit_norm <- fitdist(data$RiverDischarge, "norm")
-fit_lnorm <- fitdist(data$RiverDischarge, "lnorm")   # lognormal
-fit_gamma <- fitdist(data$RiverDischarge, "gamma")   # gamma
+fit_lnorm <- fitdist(data$RiverDischarge, "lnorm")   
+fit_gamma <- fitdist(data$RiverDischarge, "gamma")   
 
-# QQ-plots to compare fits
-qqcomp(list(fit_norm, fit_lnorm, fit_gamma), legendtext = c("Normal","Lognormal","Gamma"),
-       main="QQ comparison: Normal vs Lognormal vs Gamma")
+# (Want to change colors) -> Save current palette
+oldpal <- palette()
 
-# (d) Tail comparison and interpretation----
+# Custom colors
+palette(c("#3e90c4", "#205cbc", "#ce2e24"))
+
+# Make the QQ comparison plot
+qqcomp(
+  list(fit_norm, fit_lnorm, fit_gamma),
+  legendtext = c("Normal", "Lognormal", "Gamma"),
+  main = "QQ comparison: Normal vs Lognormal vs Gamma"
+)
+
+# Restore original palette
+palette(oldpal)
+
+############### 1 - (d) Tail comparison and interpretation ###############
+
 # Histogram with fitted density curves
 hist(data$RiverDischarge, breaks=50, prob=TRUE,
-     col = "lightblue", border = "white",
+     col = "#9A9A9A", border = "white",
      main="Histogram with fitted densities",
      xlab="Discharge (m3/s)", ylim=c(0, max(density(data$RiverDischarg)$y)*1.3))
 
 xseq <- seq(min(data$RiverDischarge), max(data$RiverDischarge), length = 1000)
 
+# Gamma density
+dgamma_fit <- dgamma(xseq, shape=fit_gamma$estimate["shape"], rate=fit_gamma$estimate["rate"])
+lines(xseq, dgamma_fit, lwd=2, col="#3e90c4")
+
 # Normal density
 dnorm_fit <- dnorm(xseq, mean=fit_norm$estimate["mean"], sd=fit_norm$estimate["sd"])
-lines(xseq, dnorm_fit, lwd=2, col="red")
+lines(xseq, dnorm_fit, lwd=2, col="#205cbc")
 
 # Lognormal density 
 dlnorm_fit <- dlnorm(xseq, meanlog=fit_lnorm$estimate["meanlog"], sdlog=fit_lnorm$estimate["sdlog"])
-lines(xseq, dlnorm_fit, lwd=2, col="darkgreen")
+lines(xseq, dlnorm_fit, lwd=2, col="#ce2e24")
 
-# Gamma density
-#dgamma_fit <- dgamma(xseq, shape=fit_gamma$estimate["shape"], rate=fit_gamma$estimate["rate"])
-#lines(xseq, dgamma_fit, lwd=2, col="purple")
+# Add ledgend
+legend("topright", legend=c("Normal fit", "Lognormal fit", "Gamma fit"),
+       col=c("#205cbc","#ce2e24","#3e90c4"), lwd=2, bty="n")
 
-legend("topright", legend=c("Normal fit", "Lognormal fit"),
-       col=c("red","darkgreen"), lwd=2, bty="n")
 
-# Define a high threshold (e.g., 95th percentile of the observed data)
-threshold_99 <- quantile(data$RiverDischarge, 0.99)
+### --- Looking at which distribution assigns more probability mass to extreme events: --- ###
 
-# Tail probabilities (P(X > threshold)) under each fitted distribution
+# Define a high threshold
+threshold_95 <- quantile(data$RiverDischarge, 0.95) # 95th percentile of the observed data
+threshold_99 <- quantile(data$RiverDischarge, 0.99) # 99th percentile of the observed data
+
+# Tail probabilities (P(X > 95th percentile)) under each fitted distribution
 p_norm_tail_99 <- 1 - pnorm(threshold_99, mean=fit_norm$estimate["mean"], sd=fit_norm$estimate["sd"])
 p_lnorm_tail_99 <- 1 - plnorm(threshold_99, meanlog=fit_lnorm$estimate["meanlog"], sdlog=fit_lnorm$estimate["sdlog"])
 
-threshold_95 <- quantile(data$RiverDischarge, 0.95)
-
-# Tail probabilities (P(X > threshold)) under each fitted distribution
+# Tail probabilities (P(X > 99th percentile)) under each fitted distribution
 p_norm_tail_95 <- 1 - pnorm(threshold_95, mean=fit_norm$estimate["mean"], sd=fit_norm$estimate["sd"])
 p_lnorm_tail_95 <- 1 - plnorm(threshold_95, meanlog=fit_lnorm$estimate["meanlog"], sdlog=fit_lnorm$estimate["sdlog"])
 
+# Exploring ratios (to understand magnitude of difference between the distributions)
 ratio_99 = p_lnorm_tail_99/p_norm_tail_99
 ratio_95 = p_lnorm_tail_95/p_norm_tail_95
 
 # Print results
-cat("Tail probability (Normal) beyond", threshold_95, ":", p_norm_tail_95, "\n")
-cat("Tail probability (Lognormal) beyond", threshold_95, ":", p_lnorm_tail_95, "\n")
+cat("Tail probability (Normal) beyond the 95th threshold (", threshold_95, "):", p_norm_tail_95, "\n")
+cat("Tail probability (Lognormal) beyond the 95th threshold (", threshold_95, "):", p_lnorm_tail_95, "\n")
+cat("Tail probability (Normal) beyond the 99th threshold (", threshold_99, "):", p_norm_tail_99, "\n")
+cat("Tail probability (Lognormal) beyond the 99th threshold (", threshold_99, "):", p_lnorm_tail_99, "\n")
 
-cat("Tail probability (Normal) beyond", threshold_99, ":", p_norm_tail_99, "\n")
-cat("Tail probability (Lognormal) beyond", threshold_99, ":", p_lnorm_tail_99, "\n")
 
-# Part 2 ----
-# (a) Are river discharge and precipitation dependent?----
+# PART 2 ----
 
-# keep rows with both values present
+############### 2 - (a) Are river discharge and precipitation dependent? ###############
+
+# Keep rows with both values present 
 df <- data[order(data$Date), ]
 df <- subset(df, !is.na(Precipitation) & !is.na(RiverDischarge))
 
 # Pearson (linear)
 cor.test(df$RiverDischarge, df$Precipitation, use = "complete.obs", method = "pearson")
 
-# (b) Lagged dependence: Cross-correlation function (CCF)----
+
+############### 2 - (b) Lagged dependence: Cross-correlation function (CCF) ###############
+
 ccf(df$Precipitation, df$RiverDischarge,
     lag.max = 30, na.action = na.omit,
     main = "CCF: Precipitation (leads) → River Discharge")
 
-#ccf(df$Precipitation, df$RiverDischarge, ylab = "cross-correlation")
 
-# (c) Extremograms: Cross- and auto-dependence of extreme events----
-# install.packages("extremogram")
-library(extremogram)
-library(dplyr)
-library(tidyr)
-library(ggplot2)
+############### 2 - (c) Extremograms: Cross- and auto-dependence of extreme events ###############
 
-# Univariate extremograms
-eg_precip <- extremogram1(df$Precipitation, maxlag = 20, quant = 0.95, type = 1)
-eg_discharge <- extremogram1(df$RiverDischarge,  maxlag = 20, quant = 0.95, type = 1)
-
-# Cross-extremogram: P_t extreme vs Q_{t+h} extreme
-# Cross-extremogram: precip extremes leading discharge extremes
 maxlag <- 20
-q1 <- 0.95      # precip threshold (upper tail)
-q2 <- 0.95      # discharge threshold (upper tail)
-# build bivariate matrix
-a <- cbind(df$Precipitation, df$RiverDischarge)
 
-# cross-extremogram (upper tails)
-eg_cross <- extremogram2(a,
-             quant1 = 0.95,    # threshold for precipitation
-             quant2 = 0.95,    # threshold for discharge
-             maxlag = 20,
-             type = 1,         # upper tails in both
-             ploting = 1, cutoff = 1, start = 0)
-# Make sure they have the same length (some implementations can return shorter vectors)
-L <- min(length(eg_precip), length(eg_discharge), length(eg_cross))
+# Univariate: Precipitation extremogram
+ext_precip <- extremogram1(
+  data$Precipitation,
+  quant = 0.95,
+  maxlag = maxlag,
+  type = 1,
+  ploting = 0  # turn off individual plotting
+)
 
-eg_df <- tibble(
-  lag = 0:(L - 1),
-  `Precipitation (auto)` = eg_precip[1:L],
-  `Discharge (auto)`     = eg_discharge[1:L],
-  `Cross  P→Q`           = eg_cross[1:L]
-) |>
-  pivot_longer(-lag, names_to = "Series", values_to = "Extremogram")
+# Univariate: Discharge extremogram
+ext_dis <- extremogram1(
+  data$RiverDischarge,
+  quant = 0.95,
+  maxlag = maxlag,
+  type = 1,
+  ploting = 0
+)
 
-# Independence reference line for upper-tail extremogram:
-# under independence P(X_{t+h} > u | X_t > u) ≈ 1 - quantile = 0.05
-ref_line <- 1 - q2
+# Cross-extremogram: precip -> discharge
+A <- cbind(data$Precipitation, data$RiverDischarge)
 
-p_ext <- ggplot(eg_df, aes(lag, Extremogram, color = Series)) +
-  geom_hline(yintercept = ref_line, linetype = "dashed", alpha = 0.6) +
-  geom_line(linewidth = 1) +
+ext_cross <- extremogram2(
+  A,
+  quant1 = 0.95,
+  quant2 = 0.95,
+  maxlag = maxlag,
+  type = 1,
+  ploting = 0
+)
+
+lags <- 0:(maxlag - 1)
+
+ext_df <- data.frame(
+  lag = rep(lags, 3),
+  value = c(ext_precip, ext_dis, ext_cross),
+  type = rep(c("Precipitation", "Discharge", "Precip → Discharge"), each = maxlag)
+)
+
+# Plot all on the same graph
+ggplot(ext_df, aes(x = lag, y = value, color = type)) +
+  geom_line(linewidth = 1.2) +            # FIXED
   geom_point(size = 2) +
   scale_color_manual(values = c(
-    "Precipitation (auto)" = "#E69F00",
-    "Discharge (auto)"     = "#56B4E9",
-    "Cross  P→Q"           = "#009E73"
+    "Precipitation" = "#3e90c4",        
+    "Discharge" = "#205cbc",            
+    "Precip → Discharge" = "#ce2e24"    
   )) +
   labs(
-    title = "Extremograms (upper tails, 95% quantile)",
-    subtitle = "P(X_{t+h} > u | X_t > u); Cross is Precipitation_t → Discharge_{t+h}",
-    x = "Lag (h)",
-    y = "Extremogram"
+    title = "Extremograms (95% Threshold)",
+    x = "Lag (days)",
+    y = "Extremogram Value",
+    color = "Series"
   ) +
-  theme_minimal(base_size = 12) +
-  theme(legend.position = "top")
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = c(0.85, 0.85),     # <-- position inside plot
+    legend.background = element_rect(fill = "white", color = NA),
+    legend.box.background = element_rect(fill = "white", color = NA)
+  )
 
-print(p_ext)
 
-# (d) Predictive relationships----
-# install.packages("lmtest")
-library(lmtest)
+############### 2 - (d) Predictive relationships ###############
 
-# Try a few lag orders; pick the one with strongest (and sensible) evidence
+# Try a few lag orders -> 1, 2, 3, 5, and 7
 for(k in c(1,2,3,5,7)){
   cat("\n--- order =", k, " ---\n")
   print(grangertest(RiverDischarge ~ Precipitation, order = k, data = df))  # Precip ⇒ Discharge?
   print(grangertest(Precipitation ~ RiverDischarge, order = k, data = df))  # Discharge ⇒ Precip?
 }
 
-
+# Using JuroExtremes code
 source("~/Desktop/MA3/Risk Analytics/Session 1/JuroExtremes.R")
 Extreme_causality_test(df$Precipitation, df$RiverDischarge)
 Extreme_causality_test(df$Precipitation, df$RiverDischarge, lag_future=2)
@@ -249,139 +272,214 @@ Extreme_causality_test(df$RiverDischarge,df$Precipitation, lag_future = 3)
 Extreme_causality_test(df$RiverDischarge,df$Precipitation, lag_future = 5)
 Extreme_causality_test(df$RiverDischarge,df$Precipitation, lag_future = 7)
 
-# (e) Extreme events and predictive insight----
 
-# (e-a) ----
+# PART 3 ----
 
-# (e-b) ----
+############### 3 - (a) Autocorrelation patterns ###############
+
+# Turn discharge into a ts object 
+discharge_ts <- ts(data$RiverDischarge)
+
+# Raw series ACF
+autoplot(discharge_ts) +
+  ggtitle("Raw River Discharge (Time Series)")
+ggAcf(discharge_ts, lag.max = 50) +
+  ggtitle("ACF of Raw River Discharge")
+
+# First difference (lag-1)
+discharge_diff <- diff(discharge_ts)
+
+autoplot(discharge_diff) +
+  ggtitle("Differenced River Discharge (lag-1)")
+ggAcf(discharge_diff, lag.max = 50) +
+  ggtitle("ACF of Differenced River Discharge")
 
 
-# Part 3 ----
-# (a) Autocorrelation patterns----
+############### 3 - (b) Serial dependence testing ###############
 
-#install.packages("fpp2")
-#install.packages("ggfortify")
-library(fpp2)
+# Ljung-Box test on raw discharge
+Box.test(discharge_ts, lag = 1, type = "Ljung-Box")
 
-library(ggplot2)
-library(ggfortify)
+# Ljung-Box test on differenced discharge
+Box.test(discharge_diff, lag = 1, type = "Ljung-Box")
+
+
+############### 3 - (c) ARIMA modeling ###############
+
+# Visual inspection-based candidate models
+ggAcf(discharge_diff, lag.max = 40) +
+  ggtitle("ACF of Differenced River Discharge")
+ggPacf(discharge_diff, lag.max = 40) +
+  ggtitle("PACF of Differenced River Discharge")
+
+# Fit a candidate ARIMA model (on differenced discharge)
+mod1 <- Arima(discharge_diff, order = c(1,0,1))
+mod2 <- Arima(discharge_diff, order = c(2,0,1))
+mod3 <- Arima(discharge_diff, order = c(1,0,2))
+mod4 <- Arima(discharge_diff, order = c(2,0,2))
+
+# Automatic model selection
+mod_auto <- auto.arima(discharge_diff)
+
+# Check model results
+mod1
+mod2
+mod3
+mod4
+mod_auto
+
+# Look at residuals (auto ARIMA on differenced discharge)
+checkresiduals(mod_auto)
+
+# Normality check
+res_auto <- residuals(mod_auto)
+qqnorm(res_auto, main = "Auto-ARIMA (on diff_dis): Q–Q Plot of Residuals")
+qqline(res_auto, col="#205cbc")
+ad.test(res_auto)
+
+# Testing if Log-transformation is a better fit
+log_discharge_ts <- log(discharge_ts)
+
+# Then repeat differencing + ARIMA on log scale:
+log_diff <- diff(log_discharge_ts)
+
+ggAcf(log_diff) +
+  ggtitle("ACF of Differenced Log River Discharge")
+ggPacf(log_diff) +
+  ggtitle("PACF of Differenced Log River Discharge")
+
+mod_log_auto <- auto.arima(log_diff)
+
+checkresiduals(mod_log_auto)
+
+# Normality check -> Log-transformed
+qqnorm(residuals(mod_log_auto), main = "Log-transformed auto-ARIMA: Q–Q Plot of Residuals")
+qqline(residuals(mod_log_auto), col="#ce2e24")
+ad.test(residuals(mod_log_auto))
+
+# Histogram for residual distributions
+hist(residuals(mod_auto), main="Residual Histogram", xlab="Residuals")
+hist(residuals(mod_log_auto), main="Residual Histogram (log transform)", xlab="Residuals")
+
+
+############### 3 - (d) Modeling volatility: GARCH ###############
 
 # Raw series
-p1 <- autoplot(acf(df$RiverDischarge, plot = FALSE)) +
-  ggtitle("ACF of River Discharge (raw)") +
-  theme_minimal()
+y <- ts(data$RiverDischarge)
 
-# Differenced series
-p2 <- autoplot(acf(diff(df$RiverDischarge), plot = FALSE)) +
-  ggtitle("ACF of Differenced River Discharge") +
-  theme_minimal()
+# Log-transformed series
+y_log <- log(y)
 
-# Combine them (if you have cowplot installed)
-library(cowplot)
-plot_grid(p1, p2, ncol = 2)
+# Differenced (stationary) versions
+dy <- diff(y)
+dy_log <- diff(y_log)
 
-# Raw discharge
-ggAcf(df$RiverDischarge)
+### --- GARCH-only Models --- ###
 
-# Difference (lag-1)
-ggAcf(diff(df$RiverDischarge))
+# GARCH(1,1) on differenced RAW, Normal
+garch_raw_norm <- garchFit(~ garch(1,1), data = dy, cond.dist = "norm")
+summary(garch_raw_norm)
+res <- residuals(garch_raw_norm, standardize = TRUE)
+ggAcf(res) + ggtitle("Residuals: GARCH(1,1) on diff Discharge, Normal")
+ggAcf(res^2) + ggtitle("Residuals^2: GARCH(1,1) on diff Discharge, Normal")
+qqnorm(res, main = "Q-Q: GARCH(1,1) on diff Discharge, Normal") 
+qqline(res, col="#205cbc")
 
-#acf(df$RiverDischarge, main = "ACF of River Discharge")
-#acf(diff(df$RiverDischarge), main = "ACF of Differenced River Discharge")
+# GARCH(1,1) on differenced RAW, Student-t
+garch_raw_t <- garchFit(~ garch(1,1), data = dy, cond.dist = "std", trace = FALSE)
+summary(garch_raw_t)
+res_t <- residuals(garch_raw_t, standardize = TRUE)
+ggAcf(res_t) + ggtitle("Residuals: GARCH(1,1) on diff Discharge, Student-t")
+ggAcf(res_t^2) + ggtitle("Residuals^2: GARCH(1,1) on diff Discharge, Student-t")
+qqnorm(res_t, main = "Q-Q: GARCH(1,1) on diff Discharge, Student-t") 
+qqline(res_t, col="#205cbc")
 
-# (b) Serial dependence testing----
-Box.test(df$RiverDischarge, lag = 1, type = "Ljung-Box")      # raw
-Box.test(diff(df$RiverDischarge), lag = 1, type = "Ljung-Box")      # differenced
+# GARCH(1,1) on differenced LOG, Normal
+garch_log_norm <- garchFit(~ garch(1,1), data = dy_log, cond.dist = "norm", trace = FALSE)
+summary(garch_log_norm)
+res_log_norm <- residuals(garch_log_norm, standardize = TRUE)
+ggAcf(res_log_norm) + ggtitle("Residuals: GARCH(1,1) on Log diff Discharge, Normal")
+ggAcf(res_log_norm^2) + ggtitle("Residuals^2: GARCH(1,1) on Log diff Discharge, Normal")
+qqnorm(res_log_norm, main = "Q-Q: GARCH(1,1) on Log diff Discharge, Normal") 
+qqline(res_log_norm, col="#ce2e24")
 
-# (c) ARIMA modeling----
-# install.packages("forecast")
-library(forecast)
-library(tseries)
+# GARCH(1,1) on differenced LOG, Student-t
+garch_log_t <- garchFit(~ garch(1,1), data = dy_log, cond.dist = "std", trace = FALSE)
+summary(garch_log_t)
+res_log_t <- residuals(garch_log_t, standardize = TRUE)
+ggAcf(res_log_t) + ggtitle("Residuals: GARCH(1,1) on Log diff Discharge, Student-t")
+ggAcf(res_log_t^2) + ggtitle("Residuals^2: GARCH(1,1) on Log diff Discharge, Student-t")
+qqnorm(res_log_t, main = "Q-Q: GARCH(1,1) on Log diff Discharge, Student-t") 
+qqline(res_log_t, col="#ce2e24")
 
-# --- 1. Visual inspection-based candidate models ---
 
-ggPacf(diff(df$RiverDischarge))
-ggAcf(diff(df$RiverDischarge))
+############### 3 - (e) Two-step modeling approach ###############
 
-# Based on ACF/PACF, we might try ARMA(1,1), ARMA(2,1), ARMA(2,2) on differenced discharge
-fit_arma11 <- Arima(diff(df$RiverDischarge), order = c(1,0,1))
-fit_arma21 <- Arima(diff(df$RiverDischarge), order = c(2,0,1))
-fit_arma22 <- Arima(diff(df$RiverDischarge), order = c(2,0,2))
+# ARIMA on differenced RAW series
+arima_raw <- auto.arima(dy)
+summary(arima_raw)
+checkresiduals(arima_raw)
 
-summary(fit_arma11)
-summary(fit_arma21)
-summary(fit_arma22)
+# ARIMA on differenced LOG series
+arima_log <- auto.arima(dy_log)
+summary(arima_log)
+checkresiduals(arima_log)
 
-# --- 2. Automatic selection ---
-model_arima <- auto.arima(diff(df$RiverDischarge), seasonal = FALSE)
-summary(model_arima)
+# Residuals from ARIMA models
+res_arima_raw <- residuals(arima_raw)
+res_arima_log <- residuals(arima_log)
 
-# --- 3. Check residuals (independence, variance, Gaussianity) ---
-checkresiduals(model_arima)
+# ARIMA (raw) + GARCH Normal
+garch_arima_raw_norm <- garchFit(~ garch(1,1), data = res_arima_raw, cond.dist = "norm", trace = FALSE)
+summary(garch_arima_raw_norm)
+std_res <- residuals(garch_arima_raw_norm, standardize=TRUE)
+ggAcf(std_res) + ggtitle("Residuals: ARIMA+GARCH on diff Discharge, Normal")
+ggAcf(std_res^2) + ggtitle("Residuals^2: ARIMA+GARCH on diff Discharge, Normal")
+qqnorm(std_res, main = "Q-Q: ARIMA+GARCH on diff Discharge, Normal") 
+qqline(std_res, col="#205cbc")
 
-# Histogram + QQ plot for residual distribution
-hist(residuals(model_arima), main="Residual Histogram", xlab="Residuals")
-qqnorm(residuals(model_arima)); qqline(residuals(model_arima), col="red")
+# ARIMA (raw) + GARCH t-distribution
+garch_arima_raw_t <- garchFit(~ garch(1,1), data = res_arima_raw, cond.dist = "std", trace = FALSE)
+summary(garch_arima_raw_t)
+std_res_t <- residuals(garch_arima_raw_t, standardize=TRUE)
+ggAcf(std_res_t) + ggtitle("Residuals: ARIMA+GARCH on diff Discharge, t-distribution")
+ggAcf(std_res_t^2) + ggtitle("Residuals^2: ARIMA+GARCH on diff Discharge, t-distribution")
+qqnorm(std_res_t, main = "Q-Q: ARIMA+GARCH on diff Discharge, t-distribution") 
+qqline(std_res_t, col="#205cbc")
 
-# --- 4. Try log-transformation of the original series ---
-model_arima_log <- auto.arima(log(df$RiverDischarge), seasonal = FALSE)
-summary(model_arima_log)
-checkresiduals(model_arima_log)
+# ARIMA (log) + GARCH Normal
+garch_arima_log_norm <- garchFit(~ garch(1,1), data = res_arima_log, cond.dist = "norm", trace = FALSE)
+summary(garch_arima_log_norm)
+std_res_log_norm <- residuals(garch_arima_log_norm, standardize=TRUE)
+ggAcf(std_res_log_norm) + ggtitle("Residuals: ARIMA+GARCH on LOG diff Discharge, Normal")
+ggAcf(std_res_log_norm^2) + ggtitle("Residuals^2: ARIMA+GARCH on LOG diff Discharge, Normal")
+qqnorm(std_res_log_norm, main = "Q-Q: ARIMA+GARCH on LOG diff Discharge, Normal") 
+qqline(std_res_log_norm, col="#ce2e24")
 
-hist(residuals(model_arima_log), main="Residual Histogram (log transform)", xlab="Residuals")
-qqnorm(residuals(model_arima_log)); qqline(residuals(model_arima_log), col="red")
+# ARIMA (log) + GARCH t-distribution
+garch_arima_log_t <- garchFit(~ garch(1,1), data = res_arima_log, cond.dist = "std", trace = FALSE)
+summary(garch_arima_log_t)
+std_res_log_t <- residuals(garch_arima_log_t, standardize=TRUE)
+ggAcf(std_res_log_t) + ggtitle("Residuals: ARIMA+GARCH on LOG diff Discharge, t-distribution")
+ggAcf(std_res_log_t^2) + ggtitle("Residuals^2: ARIMA+GARCH on LOG diff Discharge, t-distribution")
+qqnorm(std_res_log_t, main = "Q-Q: ARIMA+GARCH on LOG diff Discharge, t-distribution") 
+qqline(std_res_log_t, col="#ce2e24")
 
-# Automatic selection
-#model_arima <- auto.arima(diff(df$RiverDischarge), seasonal = FALSE)
-#summary(model_arima)
 
-# Check residuals
-#checkresiduals(model_arima)
+############### 3 - (f) Model comparison and conclusion ###############
 
-#model_arima_log <- auto.arima(log(df$RiverDischarge), seasonal = FALSE)
-#summary(model_arima_log)
-#checkresiduals(model_arima_log)
+# AIC/BIC scores - original data
+aic_norm  <- garch_raw_norm@fit$ics["AIC"]
+bic_norm  <- garch_raw_norm@fit$ics["BIC"]
 
-# (d) Modeling volatility: GARCH----
-#install.packages("fGarch")
-library(fGarch)
+aic_t     <- garch_raw_t@fit$ics["AIC"]
+bic_t     <- garch_raw_t@fit$ics["BIC"]
 
-# Fit GARCH(1,1) to differenced discharge
-garch_norm <- garchFit(~ garch(1,1), data = diff(df$RiverDischarge), cond.dist = "norm")
-garch_t    <- garchFit(~ garch(1,1), data = diff(df$RiverDischarge), cond.dist = "std")  # Student-t
+aic_combo_norm <- garch_arima_raw_norm@fit$ics["AIC"]
+bic_combo_norm <- garch_arima_raw_norm@fit$ics["BIC"]
 
-summary(garch_norm)
-summary(garch_t)
-
-# Diagnostics
-plot(garch_norm)
-plot(garch_t)
-
-# (e) Two-step modeling approach----
-# Step 1: fit ARIMA to differenced series
-model_arima <- auto.arima(diff(df$RiverDischarge), seasonal = FALSE)
-resid_arima <- residuals(model_arima)
-summary(model_arima)
-
-# Step 2: fit GARCH(1,1) to ARIMA residuals
-garch_combo_norm <- garchFit(~ garch(1,1), data = resid_arima, cond.dist = "norm")
-summary(garch_combo_norm)
-garch_combo_t <- garchFit(~ garch(1,1), data = resid_arima, cond.dist = "std")
-summary(garch_combo_t)
-
-# (f) Model comparison and conclusion----
-# AIC/BIC from fGARCH objects
-aic_norm  <- garch_norm@fit$ics["AIC"]
-bic_norm  <- garch_norm@fit$ics["BIC"]
-
-aic_t     <- garch_t@fit$ics["AIC"]
-bic_t     <- garch_t@fit$ics["BIC"]
-
-aic_combo_norm <- garch_combo_norm@fit$ics["AIC"]
-bic_combo_norm <- garch_combo_norm@fit$ics["BIC"]
-
-aic_combo_t <- garch_combo_t@fit$ics["AIC"]
-bic_combo_t <- garch_combo_t@fit$ics["BIC"]
+aic_combo_t <- garch_arima_raw_t@fit$ics["AIC"]
+bic_combo_t <- garch_arima_raw_t@fit$ics["BIC"]
 
 cbind(
   model = c("GARCH norm", "GARCH t", "ARIMA+GARCH Normal", "ARIMA+GARCH t"),
@@ -389,154 +487,65 @@ cbind(
   BIC   = c(bic_norm, bic_t, bic_combo_norm, bic_combo_t)
 )
 
+# Original data: Residuals (histograms)
+par(mfrow = c(2, 2))
 
-# Standardized residuals (divide by conditional SD)
-res_norm  <- residuals(garch_norm,        standardize = TRUE)
-res_t     <- residuals(garch_t,           standardize = TRUE)
-res_combo_norm <- residuals(garch_combo_norm, standardize = TRUE)
-res_combo_t    <- residuals(garch_combo_t,    standardize = TRUE)
-
-# Function to quickly check residuals
-check_res <- function(res, model_name) {
-  par(mfrow = c(2,2))
-  plot(res, type = "l", main = paste(model_name, "standardized residuals"), ylab = "resid")
-  acf(res, main = paste(model_name, "ACF of residuals"))
-  acf(res^2, main = paste(model_name, "ACF of squared residuals"))
-  qqnorm(res, main = paste(model_name, "QQ-plot")); qqline(res, col = "red")
-  par(mfrow = c(1,1))
-  
-  # Ljung-Box tests
-  cat("\n", model_name, "\n")
-  print(Box.test(res, lag = 10, type = "Ljung-Box"))   # check serial correlation
-  print(Box.test(res^2, lag = 10, type = "Ljung-Box")) # check ARCH effects
+plot_hist_with_norm <- function(res, main, breaks = 50) {
+  hist(res,
+       main = main,
+       xlab = "Residuals",
+       prob = TRUE,
+       col = "lightgray",
+       border = "white",
+       breaks = breaks)
+  curve(dnorm(x, mean = mean(res), sd = sd(res)),
+        add = TRUE, col = "#205cbc", lwd = 2)
 }
 
-# Run diagnostics for each model
-check_res(res_norm,       "GARCH(1,1) Normal")
-check_res(res_t,          "GARCH(1,1) Student-t")
-check_res(res_combo_norm, "ARIMA + GARCH(1,1) Normal")
-check_res(res_combo_t,    "ARIMA + GARCH(1,1) Student-t")
-# --------------------------------------------------------------------
+plot_hist_with_norm(residuals(garch_raw_norm), "GARCH (Normal)")
+plot_hist_with_norm(residuals(garch_raw_t), "GARCH (Student-t)")
+plot_hist_with_norm(residuals(garch_arima_raw_norm), "ARIMA+GARCH (Normal)")
+plot_hist_with_norm(residuals(garch_arima_raw_t), "ARIMA+GARCH (Student-t)")
 
-# a
-q_ts <- ts(df$RiverDischarge)
+# AIC/BIC scores - Log-transformed data
+aic_log_norm  <- garch_log_norm@fit$ics["AIC"]
+bic_log_norm  <- garch_log_norm@fit$ics["BIC"]
 
-# --------------------------------------------------------------------
-# 3(a) Autocorrelation patterns (raw vs differenced)
-# --------------------------------------------------------------------
-autoplot(q_ts) + ggtitle("River Discharge (raw series)")
+aic_log_t     <- garch_log_t@fit$ics["AIC"]
+bic_log_t     <- garch_log_t@fit$ics["BIC"]
 
-ggAcf(q_ts) + ggtitle("ACF: River Discharge (raw)")
+aic_log_combo_norm <- garch_arima_log_norm@fit$ics["AIC"]
+bic_log_combo_norm <- garch_arima_log_norm@fit$ics["BIC"]
 
-q_ts_d1 <- diff(q_ts)  # lag-1 differencing (stabilises mean)
-autoplot(q_ts_d1) + ggtitle("Differenced River Discharge (Δ)")
+aic_log_combo_t <- garch_arima_log_t@fit$ics["AIC"]
+bic_log_combo_t <- garch_arima_log_t@fit$ics["BIC"]
 
-ggAcf(q_ts_d1) + ggtitle("ACF: Differenced River Discharge (Δ)")
-ggPacf(q_ts_d1) + ggtitle("PACF: Differenced River Discharge (Δ)")
-
-
-# Interpretation note:
-# - Raw: slow ACF decay => non-stationary
-# - Diff: quick ACF decay => closer to stationary => easier to model
-
-# --------------------------------------------------------------------
-# 3(b) Serial dependence (Ljung–Box on raw and differenced)
-# --------------------------------------------------------------------
-Box.test(as.numeric(q_ts),    lag = 1, type = "Ljung-Box")
-Box.test(as.numeric(q_ts_d1), lag = 1, type = "Ljung-Box")
-
-# Expect strong dependence in raw, weaker after differencing.
-
-# --------------------------------------------------------------------
-# 3(c) ARIMA modeling (differenced series)
-# --------------------------------------------------------------------
-# Visual cues from ACF/PACF above can suggest AR/MA orders.
-# Let auto.arima select a good model (no seasonality).
-fit_arima_d <- auto.arima(q_ts_d1, seasonal = FALSE)
-fit_arima_d
-summary(fit_arima_d)
-
-# Residual diagnostics from forecast/fpp2
-checkresiduals(fit_arima_d)  # shows ACF of residuals, Ljung-Box, and distribution
-
-# Optional: try a log transform (if variance looks non-constant)
-# (Guard against zeros before logging)
-if (min(df$RiverDischarge, na.rm = TRUE) > 0) {
-  q_ts_log <- ts(log(df$RiverDischarge))
-  fit_arima_log <- auto.arima(q_ts_log, seasonal = FALSE)
-  fit_arima_log
-  checkresiduals(fit_arima_log)
-}
-
-# Comment in report:
-# - Are residuals ~white noise?
-# - QQ-plot/heavy tails? If heavy, Student-t in GARCH can help.
-
-# --------------------------------------------------------------------
-# 3(d) Volatility modeling: GARCH(1,1) on differenced series
-# --------------------------------------------------------------------
-# fGarch expects a numeric vector (no ts class needed)
-x <- as.numeric(q_ts_d1)
-
-garch_norm <- garchFit(~ garch(1,1), data = x, cond.dist = "norm")
-garch_t    <- garchFit(~ garch(1,1), data = x, cond.dist = "std")  # Student-t innovations
-
-summary(garch_norm)
-summary(garch_t)
-
-# Quick diagnostics (plots include residuals, ACF of squared residuals, etc.)
-par(mfrow = c(2,2)); plot(garch_norm); par(mfrow = c(1,1))
-par(mfrow = c(2,2)); plot(garch_t);    par(mfrow = c(1,1))
-
-# Check for volatility clustering via squared residuals
-res_norm <- residuals(garch_norm, standardize = TRUE)
-res_t    <- residuals(garch_t,    standardize = TRUE)
-ggAcf(res_norm^2) + ggtitle("ACF of squared standardized residuals (GARCH norm)")
-ggAcf(res_t^2)    + ggtitle("ACF of squared standardized residuals (GARCH t)")
-
-# --------------------------------------------------------------------
-# 3(e) Two-step: ARIMA for mean + GARCH for volatility
-# --------------------------------------------------------------------
-# Step 1: ARIMA on differenced series
-fit_arima_d <- auto.arima(q_ts_d1, seasonal = FALSE)
-res_arima   <- as.numeric(residuals(fit_arima_d))
-
-# Step 2: GARCH(1,1) on ARIMA residuals
-garch_combo <- garchFit(~ garch(1,1), data = res_arima, cond.dist = "std")
-summary(garch_combo)
-par(mfrow = c(2,2)); plot(garch_combo); par(mfrow = c(1,1))
-
-# Optional quick checks (white noise?)
-checkresiduals(ts(residuals(garch_combo, standardize = TRUE)))
-
-# --------------------------------------------------------------------
-# 3(f) Model comparison (AIC/BIC) — ARIMA vs GARCH vs ARIMA+GARCH
-# --------------------------------------------------------------------
-# ARIMA AIC is standard:
-aic_arima_d <- AIC(fit_arima_d)
-
-# fGARCH objects store ICs in @fit$ics
-aic_norm <- garch_norm@fit$ics["AIC"]; bic_norm <- garch_norm@fit$ics["BIC"]
-aic_t    <- garch_t@fit$ics["AIC"];    bic_t    <- garch_t@fit$ics["BIC"]
-aic_comb <- garch_combo@fit$ics["AIC"]; bic_comb <- garch_combo@fit$ics["BIC"]
-
-comp_tbl <- data.frame(
-  Model = c("ARIMA (Δ)", "GARCH(1,1) normal (Δ)", "GARCH(1,1) t (Δ)", "ARIMA(Δ)+GARCH t (resid)"),
-  AIC   = c(aic_arima_d, aic_norm, aic_t, aic_comb),
-  BIC   = c(NA,         bic_norm,  bic_t, bic_comb)  # ARIMA BIC available via BIC(fit_arima_d) if you want it
+cbind(
+  model = c("(Log) GARCH norm", "(Log) GARCH t", "(Log) ARIMA+GARCH Normal", "(Log) ARIMA+GARCH t"),
+  AIC   = c(aic_log_norm, aic_log_t, aic_log_combo_norm, aic_log_combo_t),
+  BIC   = c(bic_log_norm, bic_log_t, bic_log_combo_norm, bic_log_combo_t)
 )
 
-# If you’d like BIC for ARIMA too:
-comp_tbl$BIC[1] <- BIC(fit_arima_d)
+# Log-transformed data: Residuals (histograms)
+par(mfrow = c(2, 2))
 
-comp_tbl
+plot_hist_with_norm_log <- function(res, main, breaks = 50) {
+  hist(res,
+       main = main,
+       xlab = "Residuals",
+       prob = TRUE,
+       col = "lightgray",
+       border = "white",
+       breaks = breaks)
+  curve(dnorm(x, mean = mean(res), sd = sd(res)),
+        add = TRUE, col = "#ce2e24", lwd = 2)
+}
 
-summary(aic_comb)
+plot_hist_with_norm_log(residuals(garch_log_norm), "GARCH (Log, Normal)")
+plot_hist_with_norm_log(residuals(garch_log_t), "GARCH (Log, Student-t)")
+plot_hist_with_norm_log(residuals(garch_arima_log_norm), "ARIMA+GARCH (Log, Normal)")
+plot_hist_with_norm_log(residuals(garch_arima_log_t), "ARIMA+GARCH (Log, Student-t)")
 
-# Report guidance:
-# - Lower AIC/BIC => better.
-# - Often ARIMA+GARCH(t) wins: ARIMA handles mean/autocorr; GARCH handles volatility clustering.
-# - Check residuals are ~white noise and (ideally) close to Gaussian.
 
 
 
