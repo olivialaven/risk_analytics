@@ -1,6 +1,14 @@
-df <- read.csv("River_and_precip_Neuchatel.csv")
+# Get absolute path of this script (works when run via source())
+this_file <- normalizePath(sys.frame(1)$ofile)
+this_dir  <- dirname(this_file)
+
+# Build path to CSV assuming it is in the *same folder* as Practical_2.r
+csv_path  <- file.path(this_dir, "River_and_precip_Neuchatel.csv")
+
+df <- read.csv(csv_path)
 str(df)
 head(df)
+
 
 df$Date <- as.Date(df$Date)
 str(df$Date)
