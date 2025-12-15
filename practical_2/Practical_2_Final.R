@@ -15,10 +15,10 @@ pkgs <- c(
 
 for (p in pkgs) {
   if (!require(p, character.only = TRUE)) {
-    install.packages(p)
-    library(p, character.only = TRUE)
+    stop(paste("Package not installed:", p, "- please install it and re-run."))
   }
 }
+
 
 # ---- Paths ----
 this_file <- tryCatch(normalizePath(sys.frame(1)$ofile), error = function(e) NULL)
@@ -34,34 +34,63 @@ COL_RED    <- "#ce2e24"
 COL_LTBLUE <- "lightblue"
 COL_SKY    <- "skyblue"
 
-# ---- ggplot theme ----
-theme_set(theme_minimal(base_size = 13))
+# ---- ggplot theme (LaTeX-safe sizing) ----
+theme_set(
+  theme_minimal(base_size = 18) +
+    theme(
+      plot.title   = element_text(size = 20, face = "bold"),
+      axis.title   = element_text(size = 18),
+      axis.text    = element_text(size = 16),
+      legend.title = element_text(size = 16),
+      legend.text  = element_text(size = 14)
+    )
+)
+
+# ---- Standard figure dimensions for side-by-side plots ----
+W_WIDE_PX  <- 1600
+H_WIDE_PX  <- 900
+W_WIDE_IN  <- 9
+H_WIDE_IN  <- 9 * (H_WIDE_PX / W_WIDE_PX)  # keeps same aspect ratio
 
 # ---- Helper functions ----
 
 # Standard file naming with p2_ prefix
 p2_fig <- function(name) file.path(fig_dir, paste0("p2_", name))
 
-# Save ggplot with consistent dimensions/dpi
+# Save ggplot with consistent dimensions/dpi AND show in console
 save_gg <- function(plot, filename, width = 8, height = 5, dpi = 300) {
+  print(plot)  # ensures visibility in RStudio / interactive device
   ggsave(filename = filename, plot = plot, width = width, height = height, dpi = dpi)
 }
 
-# Save base plots robustly (supports par(), plot(), etc.)
+# Save base plots correctly (evaluate plotting expression twice)
 save_base <- function(filename,
-                      width_px = 1600,
+                      width_px  = 1600,
                       height_px = 900,
-                      res = 150,
+                      res       = 150,
                       expr) {
   
-  # ---- 1) Draw to R console ----
-  force(expr)
+  e <- substitute(expr)
   
-  # ---- 2) Draw again to file ----
+  .set_par <- function() {
+    par(cex.main = 1.6, cex.lab = 1.4, cex.axis = 1.2, cex = 1.2)
+    par(mfrow = c(1, 1))
+  }
+  
+  # ---- console ----
+  oldpar <- par(no.readonly = TRUE)
+  on.exit(par(oldpar), add = TRUE)
+  .set_par()
+  eval(e, envir = parent.frame())
+  
+  # ---- file ----
   png(filename, width = width_px, height = height_px, res = res)
-  on.exit(dev.off(), add = TRUE)
-  force(expr)
+  .set_par()
+  eval(e, envir = parent.frame())
+  dev.off()
 }
+
+
 
 ###############################
 # 1. Load & inspect data ------
@@ -120,25 +149,54 @@ save_gg(p_hist_max, p2_fig("hist_yearly_max_discharge.png"), width = 7, height =
 model_lm <- lm(max_discharge ~ year, data = yearly_max)
 summary(model_lm)
 
-future_years <- data.frame(year = seq(max(yearly_max$year) + 1, max(yearly_max$year) + 10))
-pred <- predict(model_lm, newdata = future_years, interval = "prediction")
+# Create prediction grid that includes the historical years (for fitted line)
+hist_years <- data.frame(year = yearly_max$year)
+hist_years$fit <- predict(model_lm, newdata = hist_years)
 
-future_years$fit <- pred[, "fit"]
-future_years$lwr <- pred[, "lwr"]
-future_years$upr <- pred[, "upr"]
+# Future predictions (next 10 years) with prediction interval
+future_years <- data.frame(
+  year = seq(max(yearly_max$year) + 1, max(yearly_max$year) + 10)
+)
+pred_future <- predict(model_lm, newdata = future_years, interval = "prediction")
 
+future_years$fit <- pred_future[, "fit"]
+future_years$lwr <- pred_future[, "lwr"]
+future_years$upr <- pred_future[, "upr"]
+
+# Plot: points (historical maxima) + fitted line (historical) + future ribbon/line
 p_lm <- ggplot() +
-  geom_point(data = yearly_max, aes(x = year, y = max_discharge), color = COL_BLUE) +
-  geom_line(data = future_years, aes(x = year, y = fit), color = COL_RED, linewidth = 0.9) +
-  geom_ribbon(data = future_years, aes(x = year, ymin = lwr, ymax = upr),
-              fill = COL_RED, alpha = 0.18) +
+  geom_point(
+    data = yearly_max,
+    aes(x = year, y = max_discharge),
+    color = COL_BLUE,
+    size = 1.8
+  ) +
+  geom_line(
+    data = hist_years,
+    aes(x = year, y = fit),
+    color = COL_RED,
+    linewidth = 0.9
+  ) +
+  geom_ribbon(
+    data = future_years,
+    aes(x = year, ymin = lwr, ymax = upr),
+    fill = COL_RED,
+    alpha = 0.18
+  ) +
+  geom_line(
+    data = future_years,
+    aes(x = year, y = fit),
+    color = COL_RED,
+    linewidth = 0.9
+  ) +
   labs(
-    title = "Linear Model Prediction of Yearly Maximum Discharge",
+    title = "LM: Annual Max Discharge (Fit + 10-Year Forecast)",
     x = "Year",
     y = "Max discharge (m³/s)"
   )
 
 save_gg(p_lm, p2_fig("lm_yearly_max_forecast.png"), width = 8, height = 5)
+
 
 ###############################
 # 1(c) GEV fits + AIC/BIC ------
@@ -146,6 +204,49 @@ save_gg(p_lm, p2_fig("lm_yearly_max_forecast.png"), width = 8, height = 5)
 
 gev_const <- extRemes::fevd(max_discharge ~ 1, data = yearly_max, type = "GEV")
 gev_trend <- extRemes::fevd(max_discharge ~ year, data = yearly_max, type = "GEV")
+gev_pref <- gev_const
+
+###############################
+# 1(e-prep) 10-year RL + CI ----
+###############################
+
+# 10-year return level (point estimate)
+rl_10 <- extRemes::return.level(gev_pref, return.period = 10)
+
+# 95% CI for the 10-year return level
+ci_10 <- extRemes::ci.fevd(
+  gev_pref,
+  type          = "return.level",
+  return.period = 10,
+  method        = "normal"
+)
+
+print(rl_10)
+print(ci_10)
+
+# Robust extractor for the CI values (lower, upper)
+get_ci_vals <- function(ci_obj) {
+  # If already a numeric (atomic) vector
+  if (is.atomic(ci_obj)) {
+    v <- suppressWarnings(as.numeric(ci_obj))
+    v <- v[is.finite(v)]
+    return(v)
+  }
+  
+  # If list-like with a CI element
+  if (!is.null(ci_obj$CI)) {
+    v <- suppressWarnings(as.numeric(ci_obj$CI))
+    v <- v[is.finite(v)]
+    return(v)
+  }
+  
+  # If stored as an attribute
+  v <- suppressWarnings(as.numeric(attr(ci_obj, "CI")))
+  v <- v[is.finite(v)]
+  return(v)
+}
+
+
 
 summary(gev_const)
 summary(gev_trend)
@@ -186,31 +287,173 @@ save_base(p2_fig("gev_trend_diagnostics.png"), expr = {
 })
 
 ###############################
-# 1(e) 10-year RL + CI + plot --
+# 1(d.1) GEV QQ plot (manual, styled)
 ###############################
 
-# Preferred model (explicit choice)
-gev_pref <- gev_const
-
-rl_10 <- extRemes::return.level(gev_pref, return.period = 10)
-ci_10 <- extRemes::ci.fevd(
-  gev_pref,
-  type          = "return.level",
-  return.period = 10,
-  method        = "normal"
+save_base(
+  p2_fig("gev_qq_plot.png"),
+  width_px = 1600, height_px = 1000, res = 150,
+  expr = {
+    
+    y_emp <- sort(yearly_max$max_discharge)
+    n     <- length(y_emp)
+    p     <- (1:n) / (n + 1)
+    
+    pars  <- gev_pref$results$par
+    mu    <- as.numeric(pars["location"])
+    sig   <- as.numeric(pars["scale"])
+    xi    <- as.numeric(pars["shape"])
+    
+    q_theo <- extRemes::qevd(p, loc = mu, scale = sig, shape = xi, type = "GEV")
+    
+    set.seed(123)
+    M <- 500
+    sim_mat <- replicate(
+      M,
+      sort(extRemes::revd(n, loc = mu, scale = sig, shape = xi, type = "GEV"))
+    )
+    lo <- apply(sim_mat, 1, quantile, probs = 0.025, names = FALSE)
+    hi <- apply(sim_mat, 1, quantile, probs = 0.975, names = FALSE)
+    
+    # ensure polygon x is strictly ordered
+    ord <- order(q_theo)
+    qx  <- q_theo[ord]
+    ye  <- y_emp[ord]
+    lo2 <- lo[ord]
+    hi2 <- hi[ord]
+    
+    lims <- range(c(ye, qx, lo2, hi2))
+    
+    plot(
+      qx, ye,
+      type = "n",
+      xlim = lims, ylim = lims,
+      xlab = "Model quantiles",
+      ylab = "Empirical quantiles",
+      main = "GEV QQ Plot (Annual Maxima)",
+      cex.main = 1.8, cex.lab = 1.6, cex.axis = 1.4
+    )
+    
+    polygon(
+      x = c(qx, rev(qx)),
+      y = c(lo2, rev(hi2)),
+      border = NA,
+      col = adjustcolor(COL_BLUE, alpha.f = 0.18)
+    )
+    
+    points(qx, ye, pch = 21, bg = COL_BLUE, col = "black", cex = 1.6)
+    abline(0, 1, col = COL_RED, lwd = 2, lty = 2)
+  }
 )
 
 
-print(rl_10)
-print(ci_10)
 
-save_base(p2_fig("gev_return_level_plot.png"), expr = {
-  plot(gev_pref, type = "rl")
-  abline(v = 10, lty = 2)
-  abline(h = ci_10[1], col = COL_RED, lwd = 2)       # point estimate
-  abline(h = ci_10[2], col = COL_RED, lty = 3, lwd = 2)
-  abline(h = ci_10[3], col = COL_RED, lty = 3, lwd = 2)
-})
+###############################
+# 1(e) 10-year RL + CI + plot --
+###############################
+
+save_base(
+  p2_fig("gev_return_level_plot.png"),
+  width_px = 1600, height_px = 1000, res = 150,
+  expr = {
+    
+    fit <- gev_pref
+    
+    y <- sort(yearly_max$max_discharge)
+    n <- length(y)
+    
+    pars <- fit$results$par
+    mu   <- as.numeric(pars["location"])
+    sig  <- as.numeric(pars["scale"])
+    xi   <- as.numeric(pars["shape"])
+    
+    # Empirical plotting positions
+    p_emp <- (1:n) / (n + 1)
+    T_emp <- 1 / (1 - p_emp)
+    T_emp[T_emp > 1e4] <- 1e4
+    
+    # Return-period grid (log-spaced)
+    T_grid <- exp(seq(log(1.01), log(1000), length.out = 350))
+    p_grid <- 1 - 1 / T_grid
+    
+    # Fitted return levels
+    z_hat <- extRemes::qevd(p_grid, loc = mu, scale = sig, shape = xi, type = "GEV")
+    
+    # ---- Parametric bootstrap band (robust) ----
+    set.seed(123)
+    B <- 300
+    z_boot <- matrix(NA_real_, nrow = length(T_grid), ncol = B)
+    
+    b <- 1
+    attempts <- 0
+    max_attempts <- B * 4
+    
+    while (b <= B && attempts < max_attempts) {
+      attempts <- attempts + 1
+      
+      x_b <- extRemes::revd(n, loc = mu, scale = sig, shape = xi, type = "GEV")
+      fit_b <- try(extRemes::fevd(x_b, type = "GEV"), silent = TRUE)
+      if (inherits(fit_b, "try-error")) next
+      
+      pars_b <- fit_b$results$par
+      z_boot[, b] <- extRemes::qevd(
+        p_grid,
+        loc   = as.numeric(pars_b["location"]),
+        scale = as.numeric(pars_b["scale"]),
+        shape = as.numeric(pars_b["shape"]),
+        type  = "GEV"
+      )
+      b <- b + 1
+    }
+    
+    if (b <= B) warning("Bootstrap completed with fewer successful refits than requested.")
+    
+    z_lo <- apply(z_boot, 1, quantile, probs = 0.025, na.rm = TRUE)
+    z_hi <- apply(z_boot, 1, quantile, probs = 0.975, na.rm = TRUE)
+    
+    plot(
+      T_grid, z_hat,
+      type = "n",
+      log  = "x",
+      xlab = "Return period (years)",
+      ylab = "Return level (m³/s)",
+      main = "GEV Return Level Plot (Annual Maxima)",
+      cex.main = 1.8, cex.lab = 1.6, cex.axis = 1.4
+    )
+    
+    polygon(
+      x = c(T_grid, rev(T_grid)),
+      y = c(z_lo,   rev(z_hi)),
+      border = NA,
+      col = adjustcolor(COL_BLUE, alpha.f = 0.18)
+    )
+    
+    lines(T_grid, z_hat, col = COL_BLUE, lwd = 2.4)
+    points(T_emp, y, pch = 21, bg = COL_BLUE, col = "black", cex = 1.3)
+    
+    abline(v = 10, lty = 2)
+    
+    rl_val  <- as.numeric(rl_10)
+    ci_vals <- get_ci_vals(ci_10)
+    
+    abline(h = rl_val, col = COL_RED, lwd = 2)
+    if (length(ci_vals) >= 2) {
+      abline(h = ci_vals[1], col = COL_RED, lty = 3, lwd = 2)
+      abline(h = ci_vals[2], col = COL_RED, lty = 3, lwd = 2)
+    }
+    
+    legend(
+      "topleft",
+      legend = c("Fitted GEV RL", "95% bootstrap band", "Empirical annual maxima"),
+      col    = c(COL_BLUE, adjustcolor(COL_BLUE, alpha.f = 0.30), "black"),
+      lwd    = c(2.4, NA, NA),
+      pch    = c(NA, 15, 21),
+      pt.bg  = c(NA, adjustcolor(COL_BLUE, alpha.f = 0.30), COL_BLUE),
+      bty    = "n"
+    )
+  }
+)
+
 
 ###############################
 # 1(f) RL exceedance counts ----
@@ -269,9 +512,58 @@ save_gg(p_ts, p2_fig("discharge_timeseries.png"), width = 9, height = 4.5)
 # 2(b) MRL plot + exceedances --
 ###############################
 
-save_base(p2_fig("mrlplot.png"), expr = {
-  POT::mrlplot(df$RiverDischarge, main = "Mean Residual Life Plot (River Discharge)")
+save_base(p2_fig("mrlplot.png"), width_px = W_WIDE_PX, height_px = H_WIDE_PX, res = 150, expr = {
+  
+  x <- df$RiverDischarge
+  thr_lines <- c(30, 40, 50)
+  
+  # Clean base-plot parameters to align with your EVT plot style
+  op <- par(no.readonly = TRUE)
+  on.exit(par(op), add = TRUE)
+  
+  par(
+    mar = c(4.5, 5.0, 3.5, 2.0),
+    mgp = c(2.8, 0.9, 0),
+    tcl = -0.3,
+    las = 1
+  )
+  
+  # Base MRL plot (POT draws the curve/points)
+  POT::mrlplot(
+    x,
+    main = "Mean Residual Life Plot (River Discharge)",
+    xlab = "Threshold u (m³/s)",
+    ylab = "Mean excess above u (m³/s)"
+  )
+  
+  # Emphasize the MRL curve visually (overlay a thicker line)
+  # Recompute mean excess to overlay as a clean line
+  thr_grid <- pretty(x, n = 25)
+  thr_grid <- thr_grid[thr_grid < max(x, na.rm = TRUE)]
+  
+  mrl_mean_excess <- sapply(thr_grid, function(u) {
+    exc <- x[x > u] - u
+    if (length(exc) < 5) return(NA_real_)
+    mean(exc, na.rm = TRUE)
+  })
+  
+  lines(thr_grid, mrl_mean_excess, lwd = 2.2, col = COL_BLUE)
+  
+  # Candidate threshold lines
+  abline(v = 30, col = COL_BLUE, lty = 2, lwd = 2)
+  abline(v = 40, col = COL_RED,  lty = 2, lwd = 2.6)
+  abline(v = 50, col = COL_BLUE, lty = 2, lwd = 2)
+  
+  legend(
+    "topright",
+    legend = c("MRL curve", "u = 30", "u = 40 (selected)", "u = 50"),
+    col    = c(COL_BLUE, COL_BLUE, COL_RED, COL_BLUE),
+    lty    = c(1, 2, 2, 2),
+    lwd    = c(2.2, 2, 2.6, 2),
+    bty    = "n"
+  )
 })
+
 
 u <- 40  # chosen threshold
 
@@ -290,7 +582,9 @@ p_thresh <- ggplot(df, aes(x = Date, y = RiverDischarge)) +
     y = "Discharge (m³/s)"
   )
 
-save_gg(p_thresh, p2_fig("threshold_exceedances.png"), width = 9, height = 4.5)
+save_gg(p_thresh,
+        p2_fig("threshold_exceedances.png"),
+        width = W_WIDE_IN, height = H_WIDE_IN, dpi = 300)
 
 ###############################
 # 2(c) GPD fit (ismev) + diag --
@@ -304,6 +598,75 @@ save_base(p2_fig("gpd_diagnostics.png"), expr = {
   ismev::gpd.diag(gpd_mod)
   par(mfrow = c(1, 1))
 })
+
+###############################
+# 2(c-alt) GPD QQ plot (single)
+###############################
+
+save_base(
+  p2_fig("gpd_qq_plot.png"),
+  width_px = 1600, height_px = 1000, res = 150,
+  expr = {
+    
+    u <- gpd_mod$threshold
+    y <- sort(df$RiverDischarge[df$RiverDischarge > u] - u)
+    n <- length(y)
+    p <- (1:n) / (n + 1)
+    
+    pars  <- gpd_mod$mle
+    sigma <- as.numeric(pars[1])
+    xi    <- as.numeric(pars[2])
+    
+    q_theo <- if (abs(xi) < 1e-6) {
+      sigma * log(1 / (1 - p))
+    } else {
+      (sigma / xi) * ((1 - p)^(-xi) - 1)
+    }
+    
+    set.seed(123)
+    M <- 500
+    sim_excess <- replicate(M, {
+      U <- runif(n)
+      if (abs(xi) < 1e-6) {
+        sort(sigma * log(1 / (1 - U)))
+      } else {
+        sort((sigma / xi) * ((1 - U)^(-xi) - 1))
+      }
+    })
+    
+    lo <- apply(sim_excess, 1, quantile, probs = 0.025, names = FALSE)
+    hi <- apply(sim_excess, 1, quantile, probs = 0.975, names = FALSE)
+    
+    ord <- order(q_theo)
+    qx  <- q_theo[ord]
+    ye  <- y[ord]
+    lo2 <- lo[ord]
+    hi2 <- hi[ord]
+    
+    lims <- range(c(ye, qx, lo2, hi2))
+    
+    plot(
+      qx, ye,
+      type = "n",
+      xlim = lims, ylim = lims,
+      xlab = "Model quantiles (excess above u)",
+      ylab = "Empirical excesses (x − u)",
+      main = "QQ Plot of the GPD Fit (Exceedances above 40 m³/s)",
+      cex.main = 1.8, cex.lab = 1.6, cex.axis = 1.4
+    )
+    
+    polygon(
+      x = c(qx, rev(qx)),
+      y = c(lo2, rev(hi2)),
+      border = NA,
+      col = adjustcolor(COL_BLUE, alpha.f = 0.18)
+    )
+    
+    points(qx, ye, pch = 21, bg = COL_BLUE, col = "black", cex = 1.6)
+    abline(0, 1, col = COL_RED, lwd = 2, lty = 2)
+  }
+)
+
 
 ###############################
 # 2(d) Return levels (POT) -----
